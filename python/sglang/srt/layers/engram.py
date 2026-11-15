@@ -26,6 +26,7 @@ from sglang.kernels.ops.embeddings.engram_gate import fused_engram_gate
 from sglang.kernels.ops.embeddings.engram_gather import (
     engram_gather,
     engram_gather_peer,
+    unpack_mxfp4_rows,
 )
 from sglang.kernels.ops.embeddings.engram_hash import (
     MODE_DECODE,
@@ -37,6 +38,25 @@ from sglang.kernels.ops.embeddings.engram_hash import (
     engram_hash_ids_and_commit,
 )
 from sglang.kernels.ops.quantization.fp4_fake_quant import FP8_BLOCK_SIZE
+
+
+def _engram_table_is_mxfp4(config) -> bool:
+    """True when quantization_config.engram_embed_quant == mxfp4."""
+    quant_config = getattr(config, "quantization_config", None)
+    if isinstance(quant_config, dict):
+        quant = quant_config.get("engram_embed_quant", "fp8")
+    else:
+        quant = (
+            getattr(quant_config, "engram_embed_quant", "fp8") if quant_config else "fp8"
+        )
+    if quant not in ("fp8", "mxfp4"):
+        raise ValueError(
+            f"unsupported engram_embed_quant {quant!r}; expected 'fp8' or 'mxfp4'"
+        )
+    return quant == "mxfp4"
+
+
+# MXFP4 native table support patched
 from sglang.srt.distributed import tensor_model_parallel_all_reduce
 from sglang.srt.distributed.device_communicators.cuda_wrapper import (
     find_loaded_library,
@@ -998,9 +1018,13 @@ class EngramEmbedding(nn.Module):
         dim: int,
         layer_id: int,
         column_bounds: tuple[int, ...],
+        *,
+        mxfp4: bool = False,
     ):
         super().__init__()
         self.dim = dim
+        self.mxfp4 = mxfp4
+        self.row_bytes = dim // 2 if mxfp4 else dim
         self.tp_size = get_parallel().tp_size
         tp_rank = get_parallel().tp_rank
         self.row_start, row_end = shard_range(
@@ -1011,6 +1035,7 @@ class EngramEmbedding(nn.Module):
         self._sort_host_reads = False
         self.staged_by_scheduler = False
         self.peer: Optional[_PeerShards] = None
+        weight_dtype = torch.uint8 if mxfp4 else torch.float8_e4m3fn
         if (
             envs.SGLANG_OPT_DSV41_ENGRAM_PEER_SHARDS.get()
             and self.tp_size > 1
@@ -1018,6 +1043,12 @@ class EngramEmbedding(nn.Module):
         ):
             if envs.SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE.get() and tp_rank == 0:
                 _warn_host_table_ignored()
+            # Peer path still assumes fp8 row width in 0.5.23; refuse mxfp4 there.
+            if mxfp4:
+                raise RuntimeError(
+                    "MXFP4 engram tables are incompatible with "
+                    "SGLANG_OPT_DSV41_ENGRAM_PEER_SHARDS on this wheel"
+                )
             self.peer = _PeerShards(self.rows, dim, get_parallel().tp_group)
             weight, scale = self.peer.views()
             self.weight = nn.Parameter(weight, requires_grad=False)
@@ -1026,7 +1057,7 @@ class EngramEmbedding(nn.Module):
             self._init_host_table(num_embeddings, dim, layer_id)
         else:
             self.weight = nn.Parameter(
-                torch.empty(self.rows, dim, dtype=torch.float8_e4m3fn),
+                torch.empty(self.rows, self.row_bytes, dtype=weight_dtype),
                 requires_grad=False,
             )
             self.scale = nn.Parameter(
@@ -1041,7 +1072,7 @@ class EngramEmbedding(nn.Module):
     def _init_host_table(self, num_embeddings: int, dim: int, layer_id: int):
         layout = envs.SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT.get()
         n = num_embeddings if layout == "shared" else self.rows
-        w_bytes = n * dim
+        w_bytes = n * self.row_bytes
         s_bytes = n * (dim // FP8_BLOCK_SIZE)
         self.host_table = _HostTable(
             layout,
@@ -1050,7 +1081,8 @@ class EngramEmbedding(nn.Module):
             get_parallel().tp_group,
         )
         raw = self.host_table.bytes[: w_bytes + s_bytes]
-        weight = raw[:w_bytes].view(torch.float8_e4m3fn).view(n, dim)
+        weight_dtype = torch.uint8 if self.mxfp4 else torch.float8_e4m3fn
+        weight = raw[:w_bytes].view(weight_dtype).view(n, self.row_bytes)
         scale = raw[w_bytes:].view(torch.float8_e8m0fnu).view(n, dim // FP8_BLOCK_SIZE)
         self.weight = nn.Parameter(weight, requires_grad=False)
         self.scale = nn.Parameter(scale, requires_grad=False)
@@ -1080,10 +1112,15 @@ class EngramEmbedding(nn.Module):
 
     def _load_rows(self, param: nn.Parameter, loaded_weight: torch.Tensor):
         rows = slice(self.row_start, self.row_start + self.rows)
-        if self._shared:
-            param.data[rows].copy_(loaded_weight[rows])
-        else:
-            param.data.copy_(loaded_weight[rows])
+        src = loaded_weight[rows]
+        dst = param.data[rows] if self._shared else param.data
+        if src.shape != dst.shape:
+            raise RuntimeError(
+                f"engram load shape mismatch: checkpoint {src.dtype} "
+                f"{tuple(src.shape)} vs table {dst.dtype} {tuple(dst.shape)}; "
+                "MXFP4 needs quantization_config.engram_embed_quant='mxfp4'"
+            )
+        dst.copy_(src)
         if self.host_table is not None:
             self.host_table.dirty = True
 
@@ -1118,6 +1155,7 @@ class EngramEmbedding(nn.Module):
                 self.dim,
                 FP8_BLOCK_SIZE,
                 sort_ids=self._sort_host_reads,
+                mxfp4=self.mxfp4,
             )
             return out
         if cp_all_tokens and self.tp_size > 1:
@@ -1161,6 +1199,7 @@ class EngramEmbedding(nn.Module):
             self.dim,
             FP8_BLOCK_SIZE,
             row_hi=rows.shape[0],
+            mxfp4=self.mxfp4,
         )
         return out
 
@@ -1210,6 +1249,7 @@ class EngramEmbedding(nn.Module):
             row_lo=self.row_start,
             row_hi=self.row_start + self.rows,
             sort_ids=self._sort_host_reads,
+            mxfp4=self.mxfp4,
         )
         return out
 
@@ -1317,6 +1357,7 @@ class Engram(nn.Module):
             layout.head_dim,
             layer_id,
             column_bounds=layout.column_bounds(self.layer_hash_index),
+            mxfp4=_engram_table_is_mxfp4(config),
         )
         n_hash_cols = (layout.max_ngram_size - 1) * layout.n_heads
         self.wkv = ReplicatedLinear(

@@ -2211,6 +2211,35 @@ class DeepseekV4AttnBackend(
         block_size: int,
         dspark_swa_buffers: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> DSV4Metadata:
+        capturing = (
+            torch.cuda.is_available() and torch.cuda.is_current_stream_capturing()
+        )
+        # Glue capture records device ops only. Never call seq_lens.tolist()
+        # (GPU->host sync) while capturing; prefer the CPU buffer when present.
+        if self.draft_metadata_glued or capturing:
+            bs = int(seq_lens.shape[0])
+            extend_seq_lens_cpu = [block_size] * bs
+            if seq_lens_cpu is not None:
+                base = [int(x) for x in seq_lens_cpu.tolist()]
+                seq_lens_cpu_ext = [x + block_size for x in base]
+            else:
+                # Uniform capture fill; CUDA expand ignores host lengths.
+                seq_lens_cpu_ext = extend_seq_lens_cpu
+            extend_seq_lens = self._draft_block_extend_lens(extend_seq_lens_cpu)
+            return self.init_forward_metadata_prefill(
+                max_seq_len=self.page_size,
+                req_pool_indices=req_pool_indices,
+                seq_lens=seq_lens + block_size,
+                seq_lens_cpu=seq_lens_cpu_ext,
+                out_cache_loc=out_cache_loc,
+                num_tokens=block_size * bs,
+                extend_seq_lens=extend_seq_lens,
+                extend_seq_lens_cpu=extend_seq_lens_cpu,
+                need_compress=False,
+                use_prefill_cuda_graph=False,
+                dspark_block_size=block_size,
+                dspark_swa_buffers=dspark_swa_buffers,
+            )
         if seq_lens_cpu is None:
             seq_lens_cpu_list = seq_lens.tolist()
         else:

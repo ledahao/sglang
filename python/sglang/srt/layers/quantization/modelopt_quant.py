@@ -1755,11 +1755,19 @@ class HybridFp8NvFp4Config(Fp8Config):
             # Fall back to MXFP4 for MTP MoE layers
             if self.is_fp4_experts:
                 from sglang.srt.layers.quantization.fp8 import Fp8MoEMethod
+
+                fp8_method = Fp8MoEMethod(self)
+                if get_platform().is_sm90 or get_platform().is_sm120:
+                    from sglang.srt.layers.quantization.mxfp4_flashinfer_cutlass_moe import (
+                        Mxfp4FlashinferCutlassMoEMethod,
+                    )
+
+                    return Mxfp4FlashinferCutlassMoEMethod(fp8_method, prefix=prefix)
                 from sglang.srt.layers.quantization.mxfp4_flashinfer_trtllm_moe import (
                     Mxfp4FlashinferTrtllmMoEMethod,
                 )
 
-                return Mxfp4FlashinferTrtllmMoEMethod(Fp8MoEMethod(self), prefix=prefix)
+                return Mxfp4FlashinferTrtllmMoEMethod(fp8_method, prefix=prefix)
         return super().get_quant_method(layer, prefix)
 
     def apply_weight_name_mapper(self, hf_to_sglang_mapper: WeightsMapper):
@@ -2806,8 +2814,20 @@ class ModelOptNvFp4FusedMoEMethod(FusedMoEMethodBase):
                 assert torch.all(w13_input_scale == w13_input_scale[0])
                 w13_input_scale = w13_input_scale[0]
         else:
-            w13_input_scale = layer.w13_input_scale.max(dim=-1).values.to(torch.float32)
-            w2_input_scale = layer.w2_input_scale
+            # flashinfer_mxfp4 and other non-cutlass backends: keep per-expert
+            # scales but shard global checkpoint vectors to this EP rank.
+            w13_input_scale = _input_scale_to_local_experts(
+                layer.w13_input_scale.max(dim=-1).values.to(torch.float32),
+                layer.num_local_experts,
+                layer.num_experts,
+                layer.moe_ep_rank,
+            )
+            w2_input_scale = _input_scale_to_local_experts(
+                layer.w2_input_scale,
+                layer.num_local_experts,
+                layer.num_experts,
+                layer.moe_ep_rank,
+            )
 
         use_w4a16 = (
             self._is_cutedsl_v2_standard or moe_runner_backend.is_flashinfer_megamoe()

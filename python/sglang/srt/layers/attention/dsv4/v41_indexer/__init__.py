@@ -43,7 +43,14 @@ __all__ = [
 def is_sm100_or_newer() -> bool:
     # DeepGEMM's fp8_fp4 mqa-logits kernels need SM100+; Hopper and non-CUDA devices
     # take the torch indexer.
-    return is_cuda() and torch.cuda.get_device_capability()[0] >= 10
+    # SM120/121 (RTX PRO / 6000D) report major>=10 but do not share the SM100
+    # DeepGEMM MQA kernels; force the torch indexer there.
+    if not is_cuda():
+        return False
+    major, _minor = torch.cuda.get_device_capability()
+    if major == 12:
+        return False
+    return major >= 10
 
 
 @functools.cache
@@ -104,10 +111,10 @@ def make_candidate_indexer(
     )
 
     if not DEEPGEMM_PAGED_SPARSE_MQA_LOGITS:
-        raise RuntimeError(
-            "the candidate indexer needs DeepGEMM's paged sparse MQA logits "
-            "(sgl-deep-gemm >= 0.2.0 with SGLANG_ENABLE_JIT_DEEPGEMM on)"
-        )
+        # SM120 (and any non-SM100 Blackwell) exposes CUDA capability >=10 so
+        # is_sm100_or_newer() is true, but DeepGEMM's paged-sparse MQA path is
+        # SM100-only. Fall back to the dense-block indexer instead of dying.
+        return dense_blocks, dense_blocks
     from .sparse_table import SparseTableBackend
 
     sparse_table = SparseTableBackend(
