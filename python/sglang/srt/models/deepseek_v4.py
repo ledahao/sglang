@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import functools
+import os
 import logging
 import time
 from array import array
@@ -92,7 +93,7 @@ from sglang.srt.layers.layer_boundary import append_stages, get_attn_tp_context
 from sglang.srt.layers.layer_boundary.residual import batch as residual_batch
 from sglang.srt.layers.layernorm import RMSNorm
 from sglang.srt.layers.linear import ColumnParallelLinear, RowParallelLinear
-from sglang.srt.layers.logits_processor import LogitsMetadata, LogitsProcessor
+from sglang.srt.layers.logits_processor import LogitsMetadata, LogitsProcessor, LogitsProcessorOutput
 from sglang.srt.layers.moe import get_moe_a2a_backend
 from sglang.srt.layers.moe.fused_moe_triton import FusedMoE
 from sglang.srt.layers.moe.utils import (
@@ -1838,6 +1839,12 @@ class MQALayer(MqaAttentionBase):
         prefill-CP case (which needs bf16 kv for the cross-rank all-gather).
         q_rope ([T, H, head_dim]) has its query heads roped by the same launch.
         """
+        if (
+            getattr(forward_batch, "dsv4_decoder_tail_replay", False)
+            and self.layer_id < 20
+        ):
+            # Prefill already published SWA and compressed KV for layers 0-19.
+            return
         if envs.SGLANG_DSV4_USE_BF16_KV_QUANT_SOURCE.get():
             assert q_rope is None
             # Quantize the nope payload from bf16-rounded values (the fused
@@ -3120,6 +3127,7 @@ class DeepseekV4DecoderLayerBase(nn.Module):
         *,
         boundary_pre_from_prev: Optional[bool] = None,
         boundary_mhc_fusions: bool = True,
+        omit_ffn: bool = False,
     ) -> None:
         super().__init__()
         self.hc_stats_stream = hc_stats_stream
@@ -3152,7 +3160,11 @@ class DeepseekV4DecoderLayerBase(nn.Module):
             )
             else None
         )
-        self.mlp = deepseek_v2.DeepseekV2MoE(
+        if omit_ffn:
+            # Cache producer: attention, compressor, and indexer only.
+            self.mlp = None
+        else:
+            self.mlp = deepseek_v2.DeepseekV2MoE(
             config=config,
             quant_config=moe_quant_config_override or quant_config,
             prefix=add_prefix("mlp", prefix),
@@ -3166,9 +3178,9 @@ class DeepseekV4DecoderLayerBase(nn.Module):
             and not getattr(config, "language_model_only", False),
         )
 
-        if _use_aiter:
-            # V4.1 runs its FP4 routed experts on MXFP8 activations
-            self.mlp.experts.fp8_activations = config.model_type == "deepseek_v41"
+            if _use_aiter:
+                # V4.1 runs its FP4 routed experts on MXFP8 activations
+                self.mlp.experts.fp8_activations = config.model_type == "deepseek_v41"
 
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(
@@ -3556,7 +3568,8 @@ class DeepseekV4CudaDecoderLayer(DeepseekV4DecoderLayerBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.self_attn.wo_b.reduce_results = False
-        self.mlp.reduce_results = False
+        if self.mlp is not None:
+            self.mlp.reduce_results = False
         declarations = hc_boundary.stages(self.config, self.layer_id, layer=self)
         self.attn_boundary, self.ffn_boundary = append_stages(
             (declarations[0], self.input_layernorm),
@@ -3815,8 +3828,29 @@ class DeepseekV4Model(nn.Module):
             else None
         )
         self.engram_layout = EngramLayout.from_config(config)
+        # Prefill publishes global Main-KV and Indexer-K at the last kv source
+        # and does not allocate the decoder FFN, later layers, or a sample.
+        self.encoder_only_prefill = (
+            os.environ.get("SGLANG_DSV4_ENCODER_ONLY_PREFILL", "") == "1"
+        )
+        self.encoder_only_boundary = None
+        num_layers = config.num_hidden_layers
+        if self.encoder_only_prefill:
+            assert config.kv_source_layer_ids, "encoder-only prefill needs kv sources"
+            self.encoder_only_boundary = max(config.kv_source_layer_ids)
+            assert self.encoder_only_boundary + 1 <= config.num_hidden_layers
+            num_layers = self.encoder_only_boundary + 1
+            logger.info(
+                "DSV4 encoder-only prefill: full forward of the first 20 "
+                "layers (0-%s); layer %s publishes Main KV and Indexer K "
+                "only; layers %s-%s stay on decode",
+                self.encoder_only_boundary - 1,
+                self.encoder_only_boundary,
+                self.encoder_only_boundary,
+                config.num_hidden_layers - 1,
+            )
         self.layers, self.start_layer, self.end_layer = make_pp_layers(
-            config.num_hidden_layers,
+            num_layers,
             lambda idx, prefix: DeepseekV4DecoderLayer(
                 config=config,
                 layer_id=idx,
@@ -3826,6 +3860,9 @@ class DeepseekV4Model(nn.Module):
                 engram_layout=self.engram_layout,
                 hc_stats_stream=self.hc_stats_stream,
                 moe_routed_quant_stream=self.moe_routed_quant_stream,
+                omit_ffn=(
+                    self.encoder_only_prefill and idx == self.encoder_only_boundary
+                ),
             ),
             prefix=add_prefix("layers", prefix),
             final_read=hc_boundary.FinalRead() if _is_cuda else None,
@@ -4061,6 +4098,59 @@ class DeepseekV4Model(nn.Module):
             residual_batch.start(forward_batch)
             hidden_states = residual_batch.set_written(state, forward_batch)
         for i in range(self.start_layer, self.end_layer):
+            if self.encoder_only_prefill and i == self.encoder_only_boundary:
+                # Full prompt through the encoder, then write this layer's
+                # compressor KV and indexer K. Do not run its FFN or any
+                # later decoder layer, and do not enter the SWA tail.
+                source = self.layers[i]
+                if _is_cuda:
+                    call = hc_boundary.LayerCall(input_ids, input_ids_global)
+                    next_boundary = (
+                        hc_boundary.HcRead(source, True)
+                        .bind(forward_batch, call)
+                        .next_boundary
+                    )
+                    hidden_states = state = hc_boundary.materialize(
+                        hidden_states, forward_batch, next=next_boundary
+                    )
+                source_x = mhc.combine(source.attn_hc, state)
+                attn_backend = get_attn_backend()
+                if source_x.shape[0] > 0:
+                    qkv_a = None
+                    if source.self_attn.fuse_wqa_wkv:
+                        qkv_a, _ = source.self_attn.wqkv_a(source_x)
+                    q_lora, _ = source.self_attn._compute_q_a(source_x, qkv_a=qkv_a)
+                    attn_backend.forward_low_ratio_sources(
+                        layer=source.self_attn,
+                        x=source_x,
+                        q_lora=None,
+                        positions=positions,
+                        forward_batch=forward_batch,
+                        run_indexer=False,
+                    )
+                    attn_backend.forward_low_ratio_sources(
+                        layer=source.self_attn,
+                        x=source_x,
+                        q_lora=q_lora,
+                        positions=positions,
+                        forward_batch=forward_batch,
+                        run_compressor=False,
+                    )
+                if capture_dspark and dspark_aux_hidden_states is not None:
+                    # The draft stages read decoder layers this prefill does
+                    # not execute. Publish the boundary stream so the packed
+                    # buffer still has one slot per stage.
+                    from sglang.kernels.ops.layernorm.mhc import mhc_stream_mean
+
+                    aux = state.residual
+                    while len(dspark_aux_hidden_states) < dspark_aux_hidden_states._num_captures:
+                        mhc_stream_mean(
+                            aux, out=dspark_aux_hidden_states.slot(aux[:, 0])
+                        )
+                    del aux
+                if _is_cuda:
+                    residual_batch.clear(forward_batch)
+                return state.residual, state.pre, None
             if _is_cuda:
                 layer = self.layers[i]
                 if (
@@ -4084,7 +4174,9 @@ class DeepseekV4Model(nn.Module):
                         hidden_states, forward_batch, next=next_boundary
                     )
             if tail is not None and i == self.late_layer_start:
-                if self.tail_writes_source_kv:
+                if self.tail_writes_source_kv and not getattr(
+                    forward_batch, "dsv4_decoder_tail_replay", False
+                ):
                     source = self.layers[i]
                     if _is_hip and source.hc_boundary_fused:
                         # The previous FFN hc_post has not run yet, so run it here too.
@@ -4733,6 +4825,8 @@ class DeepseekV4ForCausalLM(nn.Module):
         # Expose start_layer/end_layer for model_runner PP support
         self.start_layer = self.model.start_layer
         self.end_layer = self.model.end_layer
+        # The KV pool stays full-depth so the PD wire matches decode.
+        self.encoder_only_prefill = self.model.encoder_only_boundary is not None
 
         # update_weights_from_disk/_tensor/_distributed re-enter load_weights
         # mid-serving (RL refit sends many partial batches); the prewarm and
@@ -4949,6 +5043,15 @@ class DeepseekV4ForCausalLM(nn.Module):
         if self.capture_aux_hidden_states:
             hidden_states, aux_hidden_states = hidden_states
         hidden_states, pre_hc_head = hidden_states
+        if getattr(self.model, "encoder_only_prefill", False):
+            # The cache is already published. Decode samples token 0.
+            # A one-column placeholder keeps the DP logits slice valid.
+            # DSpark still reads the packed aux states to fill the draft KV.
+            rows = hidden_states.shape[0]
+            return LogitsProcessorOutput(
+                next_token_logits=hidden_states.new_zeros((rows, 1)),
+                hidden_states=aux_hidden_states,
+            )
 
         logits_metadata = forward_batch
         tail = None
@@ -5366,6 +5469,13 @@ class DeepseekV4ForCausalLM(nn.Module):
                             layer_id < self.model.start_layer
                             or layer_id >= self.model.end_layer
                         )
+                    ):
+                        continue
+                    if (
+                        layer_id is not None
+                        and getattr(self.model, "encoder_only_prefill", False)
+                        and layer_id == self.model.encoder_only_boundary
+                        and (".mlp." in name or ".ffn." in name)
                     ):
                         continue
                     if (

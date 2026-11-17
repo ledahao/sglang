@@ -1,0 +1,31 @@
+{
+  "filetype": "generate_conversations",
+  "num_conversations": 16,
+  "text_files": [
+    "/home/aaron/pd/bench/runs/website-suite-20261117-091436/multiturn/mt_corpus_c8.txt"
+  ],
+  "prompt_input": {
+    "num_turns": {
+      "distribution": "constant",
+      "value": 10
+    },
+    "common_prefix_num_tokens": {
+      "distribution": "constant",
+      "value": 15000
+    },
+    "prefix_num_tokens": {
+      "distribution": "constant",
+      "value": 45000
+    },
+    "num_tokens": {
+      "distribution": "constant",
+      "value": 4500
+    }
+  },
+  "prompt_output": {
+    "num_tokens": {
+      "distribution": "constant",
+      "value": 500
+    }
+  }
+}

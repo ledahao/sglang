@@ -231,7 +231,12 @@ def _compute_model_num_layers(
 
 
 def _resolve_pp_layer_range(*, model: Any, model_num_layers: int) -> _PPLayerRange:
+    end_layer = getattr(model, "end_layer", model_num_layers)
+    # Encoder-only prefill builds through the cache producer, but the KV
+    # pool keeps every target layer so Mooncake matches a full decode.
+    if getattr(model, "encoder_only_prefill", False):
+        end_layer = model_num_layers
     return _PPLayerRange(
         start_layer=getattr(model, "start_layer", 0),
-        end_layer=getattr(model, "end_layer", model_num_layers),
+        end_layer=end_layer,
     )

@@ -1566,6 +1566,10 @@ class SchedulerDisaggregationPrefillMixin:
         state_indices: Optional[List] = None
         if last_chunk:
             self.disagg_metadata_buffers.set_buf(req)
+            # The sentinel is already in the metadata buffer. Drop it so the
+            # HTTP response does not treat a cache-only handoff as a token.
+            if req.output_ids and req.output_ids[-1] < 0:
+                req.output_ids.pop()
 
             # Most state payloads read token-pool rows and should match the KV
             # range actually materialized on prefill. C128 state is request

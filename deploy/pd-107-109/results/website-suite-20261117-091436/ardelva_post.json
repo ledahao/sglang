@@ -1,0 +1,8 @@
+{
+ "http": 201,
+ "id": 21,
+ "verified": true,
+ "url": "https://ardelva.ai/tests/run/?m=deepseek%2Fv4.1-flash-1017%40nvfp4&d=split%3Dpd-asym%7CP%3Dtp8%5BL0-19%5D%3Aprefill%7CD%3Dtp8%5BL0-39%5D%3Adecode%7Cside%3Dgpu%7Ckv%3Dfp8%40hbm%7Cspec%3Ddspark&h=P%3Drtxpro5000-72g%C3%978%288%2Fnode%3Bhost%3A256G%3Btp%3Apcie5-xgmi%3Bpp%3Apcie5-p2p%3Bnet%3Aeth-200g%29%7CD%3Drtxpro6000d-84g%C3%978%288%2Fnode%3Bhost%3A256G%3Btp%3Apcie5-xgmi%3Bpp%3Apcie5-p2p%3Bnet%3Aeth-200g%29%7CP%E2%86%92D%3Deth-200g",
+ "points": 40,
+ "official_field": "verified"
+}

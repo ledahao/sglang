@@ -399,6 +399,8 @@ def _local_prefill_cuda_graph_vote(
     which an extend replay runs."""
     if local_batch is None or local_batch.forward_mode.is_idle():
         return True
+    if getattr(local_batch, "dsv4_decoder_tail_replay", False):
+        return False
     if not coordinated_prefill:
         return False
 

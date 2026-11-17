@@ -1,0 +1,289 @@
+{
+ "acc_set": "ardelva-qc-v1",
+ "acc_n": 40,
+ "acc_pct": 100.0,
+ "model": "/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4",
+ "date": "2026-11-17",
+ "detail": [
+  {
+   "q": "Compute 2465 * 30 + 2756.",
+   "gold": "76706",
+   "got": "76706",
+   "ok": true,
+   "raw": "First, multiply 2465 by 30:  \n2465 × 30 = 2465 × 3 × 10 = 7395 × 10 = 73950.\n\nThen add 2756:  \n73950 + 2756 = 76706.\n\nANSWER: 76706"
+  },
+  {
+   "q": "Compute 3671 * 36 + 2288.",
+   "gold": "134444",
+   "got": "134444",
+   "ok": true,
+   "raw": "Let's compute step by step.\n\nFirst, multiply 3671 by 36:  \n3671 × 36 = 3671 × (30 + 6)  \n= 3671 × 30 + 3671 × 6  \n= 110130 + 22026  \n= 132156.\n\nNow add 2288:  \n132156 + 2288 = 134444.\n\nANSWER: 134444"
+  },
+  {
+   "q": "Compute 1895 * 79 + 4260.",
+   "gold": "153965",
+   "got": "153965",
+   "ok": true,
+   "raw": "First, multiply 1895 by 79:  \n1895 * 79 = 1895 * (80 - 1) = 1895*80 - 1895 = 151600 - 1895 = 149705.  \n\nThen add 4260:  \n149705 + 4260 = 153965.  \n\nANSWER: 153965"
+  },
+  {
+   "q": "Compute 9678 * 77 + 1974.",
+   "gold": "747180",
+   "got": "747180",
+   "ok": true,
+   "raw": "First, multiply 9678 by 77:  \n9678 × 77 = 9678 × (70 + 7) = 677,460 + 67,746 = 745,206.  \n\nThen add 1974:  \n745,206 + 1,974 = 747,180.  \n\nANSWER: 747180"
+  },
+  {
+   "q": "Compute 3921 * 69 + 3201.",
+   "gold": "273750",
+   "got": "273750",
+   "ok": true,
+   "raw": "First, multiply 3921 by 69:  \n3921 * 69 = 3921 * (70 - 1) = 3921*70 - 3921 = 274470 - 3921 = 270549.  \n\nThen add 3201:  \n270549 + 3201 = 273750.  \n\nANSWER: 273750"
+  },
+  {
+   "q": "Compute 6324 * 94 + 8309.",
+   "gold": "602765",
+   "got": "602765",
+   "ok": true,
+   "raw": "First, multiply 6324 by 94:  \n6324 * 94 = 6324 * (100 - 6) = 632400 - 37944 = 594456.  \n\nThen add 8309:  \n594456 + 8309 = 602765.  \n\nANSWER: 602765"
+  },
+  {
+   "q": "Compute 3935 * 52 + 5357.",
+   "gold": "209977",
+   "got": "209977",
+   "ok": true,
+   "raw": "First, multiply 3935 by 52:  \n3935 × 50 = 196,750  \n3935 × 2 = 7,870  \nSum: 196,750 + 7,870 = 204,620  \n\nNext, add 5357:  \n204,620 + 5,357 = 209,977  \n\nANSWER: 209977"
+  },
+  {
+   "q": "Compute 8452 * 55 + 7530.",
+   "gold": "472390",
+   "got": "472390",
+   "ok": true,
+   "raw": "First, multiply 8452 by 55:  \n8452 * 55 = 8452 * (50 + 5) = 422600 + 42260 = 464860.  \n\nThen add 7530:  \n464860 + 7530 = 472390.  \n\nANSWER: 472390"
+  },
+  {
+   "q": "Compute 4359 * 43 + 8756.",
+   "gold": "196193",
+   "got": "196193",
+   "ok": true,
+   "raw": "First, multiply 4359 by 43:  \n4359 * 40 = 174360  \n4359 * 3 = 13077  \nSum: 174360 + 13077 = 187437  \n\nNext, add 8756:  \n187437 + 8756 = 196193  \n\nANSWER: 196193"
+  },
+  {
+   "q": "Compute 2922 * 15 + 1310.",
+   "gold": "45140",
+   "got": "45140",
+   "ok": true,
+   "raw": "First, compute \\( 2922 \\times 15 \\):\n\n\\[\n2922 \\times 15 = 2922 \\times (10 + 5) = 29220 + 14610 = 43830\n\\]\n\nNow add 1310:\n\n\\[\n43830 + 1310 = 45140\n\\]\n\nANSWER: 45140"
+  },
+  {
+   "q": "Compute 6103 * 39 + 8665.",
+   "gold": "246682",
+   "got": "246682",
+   "ok": true,
+   "raw": "First, multiply 6103 by 39:  \n6103 × 39 = 6103 × (40 − 1) = 244120 − 6103 = 238017.  \n\nThen add 8665:  \n238017 + 8665 = 246682.  \n\nANSWER: 246682"
+  },
+  {
+   "q": "Compute 8908 * 41 + 1956.",
+   "gold": "367184",
+   "got": "367184",
+   "ok": true,
+   "raw": "First, multiply 8908 by 41:  \n8908 × 40 = 356,320  \n8908 × 1 = 8,908  \nSum: 356,320 + 8,908 = 365,228  \n\nNext, add 1956:  \n365,228 + 1,956 = 367,184  \n\nANSWER: 367184"
+  },
+  {
+   "q": "A warehouse has 243 boxes and each box holds 29 parts. 91 parts are shipped out. How many parts remain in the warehouse?",
+   "gold": "6956",
+   "got": "6956",
+   "ok": true,
+   "raw": "First, find the total number of parts in the warehouse:  \n243 boxes × 29 parts/box = 7047 parts.\n\nThen subtract the parts shipped out:  \n7047 − 91 = 6956 parts remain.\n\nANSWER: 6956"
+  },
+  {
+   "q": "A warehouse has 83 boxes and each box holds 37 parts. 182 parts are shipped out. How many parts remain in the warehouse?",
+   "gold": "2889",
+   "got": "2889",
+   "ok": true,
+   "raw": "First, find the total number of parts in the warehouse:  \n83 × 37 = 3071 parts.\n\nThen subtract the parts shipped out:  \n3071 − 182 = 2889 parts remain.\n\nANSWER: 2889"
+  },
+  {
+   "q": "A warehouse has 140 boxes and each box holds 43 parts. 340 parts are shipped out. How many parts remain in the warehouse?",
+   "gold": "5680",
+   "got": "5680",
+   "ok": true,
+   "raw": "First, find the total number of parts in the warehouse:  \n140 × 43 = 6020 parts.\n\nThen subtract the parts shipped out:  \n6020 − 340 = 5680 parts remain.\n\nANSWER: 5680"
+  },
+  {
+   "q": "A warehouse has 174 boxes and each box holds 8 parts. 641 parts are shipped out. How many parts remain in the warehouse?",
+   "gold": "751",
+   "got": "751",
+   "ok": true,
+   "raw": "First, find the total number of parts in the warehouse:  \n174 × 8 = 1392 parts.\n\nThen subtract the shipped parts:  \n1392 − 641 = 751 parts remain.\n\nANSWER: 751"
+  },
+  {
+   "q": "A warehouse has 95 boxes and each box holds 27 parts. 265 parts are shipped out. How many parts remain in the warehouse?",
+   "gold": "2300",
+   "got": "2300",
+   "ok": true,
+   "raw": "First, find the total number of parts in the warehouse:  \n95 × 27 = 2565 parts.\n\nThen subtract the parts shipped out:  \n2565 − 265 = 2300 parts remain.\n\nANSWER: 2300"
+  },
+  {
+   "q": "A warehouse has 262 boxes and each box holds 20 parts. 819 parts are shipped out. How many parts remain in the warehouse?",
+   "gold": "4421",
+   "got": "4421",
+   "ok": true,
+   "raw": "First, find the total number of parts in the warehouse:  \n262 boxes × 20 parts/box = 5240 parts.\n\nThen subtract the parts shipped out:  \n5240 − 819 = 4421 parts remain.\n\nANSWER: 4421"
+  },
+  {
+   "q": "A warehouse has 285 boxes and each box holds 7 parts. 713 parts are shipped out. How many parts remain in the warehouse?",
+   "gold": "1282",
+   "got": "1282",
+   "ok": true,
+   "raw": "First, find the total number of parts in the warehouse:  \n285 boxes × 7 parts per box = 1995 parts.\n\nThen subtract the shipped parts:  \n1995 − 713 = 1282 parts remain.\n\nANSWER: 1282"
+  },
+  {
+   "q": "A warehouse has 343 boxes and each box holds 37 parts. 219 parts are shipped out. How many parts remain in the warehouse?",
+   "gold": "12472",
+   "got": "12472",
+   "ok": true,
+   "raw": "First, find the total number of parts in the warehouse:  \n343 boxes × 37 parts per box = 12,691 parts.\n\nThen subtract the parts shipped out:  \n12,691 − 219 = 12,472 parts remain.\n\nANSWER: 12472"
+  },
+  {
+   "q": "What does this Python code print?\n```python\nxs = [24, 26, 2, 27, 27, 5, 28, 17]\nprint(sum(x * x for x in xs if x % 2 == 0))\n```",
+   "gold": "2040",
+   "got": "2040",
+   "ok": true,
+   "raw": "Let's go through the code step by step.\n\nWe have:\n\n```python\nxs = [24, 26, 2, 27, 27, 5, 28, 17]\nprint(sum(x * x for x in xs if x % 2 == 0))\n```\n\n1. The generator expression iterates over `xs`.\n2. It filters for even numbers (`x % 2 == 0`).\n3. For each even number, it computes `x * x`.\n4. Then it sums those squares.\n\nEven numbers in the list:  \n- 24 → 24² = 576  \n- 26 → 26² = 676  \n- 2 → 2² = 4  \n- 28 → 28² = 784  \n\nSum: 576 + 676 + 4 + 784 = 2040.\n\nANSWER: 2040"
+  },
+  {
+   "q": "What does this Python code print?\n```python\nxs = [4, 23, 13, 4, 23, 17, 4, 20]\nprint(sum(x * x for x in xs if x % 2 == 0))\n```",
+   "gold": "448",
+   "got": "448",
+   "ok": true,
+   "raw": "Let's go through it step-by-step.\n\nWe have:\n\n```python\nxs = [4, 23, 13, 4, 23, 17, 4, 20]\n```\n\nWe only consider even numbers (`x % 2 == 0`):\n\n- 4 → even\n- 23 → odd\n- 13 → odd\n- 4 → even\n- 23 → odd\n- 17 → odd\n- 4 → even\n- 20 → even\n\nEven numbers: 4, 4, 4, 20.\n\nNow square each:\n\n- 4² = 16\n- 4² = 16\n- 4² = 16\n- 20² = 400\n\nSum: 16 + 16 + 16 + 400 = 448.\n\nANSWER: 448"
+  },
+  {
+   "q": "What does this Python code print?\n```python\nxs = [12, 30, 21, 5, 6, 21, 11, 29]\nprint(sum(x * x for x in xs if x % 2 == 0))\n```",
+   "gold": "1080",
+   "got": "1080",
+   "ok": true,
+   "raw": "Let's go through the code step by step.\n\nWe have:\n\n```python\nxs = [12, 30, 21, 5, 6, 21, 11, 29]\nprint(sum(x * x for x in xs if x % 2 == 0))\n```\n\n1. The generator expression iterates over `xs`.\n2. It filters for even numbers (`x % 2 == 0`).\n3. For each even number, it computes `x * x`.\n4. Then it sums all those squared values.\n\nEven numbers in the list:  \n- 12 (even) → 12² = 144  \n- 30 (even) → 30² = 900  \n- 21 (odd) → skip  \n- 5 (odd) → skip  \n- 6 (even) → 6² = 36  \n- 21 (odd) → skip  \n- 11 (od"
+  },
+  {
+   "q": "What does this Python code print?\n```python\nxs = [2, 27, 2, 7, 6, 30, 17, 14]\nprint(sum(x * x for x in xs if x % 2 == 0))\n```",
+   "gold": "1140",
+   "got": "1140",
+   "ok": true,
+   "raw": "Let's go through the code step by step.\n\nWe have:\n\n```python\nxs = [2, 27, 2, 7, 6, 30, 17, 14]\nprint(sum(x * x for x in xs if x % 2 == 0))\n```\n\n1. The generator expression iterates over `xs`.\n2. It filters for even numbers (`x % 2 == 0`).\n3. For each even number, it computes `x * x`.\n4. Then it sums all those squared values.\n\nEven numbers in `xs`: 2, 2, 6, 30, 14.\n\nSquares:  \n- 2² = 4  \n- 2² = 4  \n- 6² = 36  \n- 30² = 900  \n- 14² = 196  \n\nSum: 4 + 4 + 36 + 900 + 196 = 1140.\n\nANSWER: 1140"
+  },
+  {
+   "q": "What does this Python code print?\n```python\nr = 1\nfor i in range(1, 8 + 1):\n    r = r * i % 1000\nprint(r)\n```",
+   "gold": "320",
+   "got": "320",
+   "ok": true,
+   "raw": "Let's go through the code step by step.\n\nWe have:\n\n```python\nr = 1\nfor i in range(1, 8 + 1):\n    r = r * i % 1000\nprint(r)\n```\n\n`range(1, 8 + 1)` means `range(1, 9)`, so `i` takes values 1 through 8.\n\nWe start with `r = 1`.\n\n- i = 1: r = (1 * 1) % 1000 = 1\n- i = 2: r = (1 * 2) % 1000 = 2\n- i = 3: r = (2 * 3) % 1000 = 6\n- i = 4: r = (6 * 4) % 1000 = 24\n- i = 5: r = (24 * 5) % 1000 = 120\n- i = 6: r = (120 * 6) % 1000 = 720\n- i = 7: r = (720 * 7) % 1000 = 5040 % 1000 = 40\n- i = 8: r = (40 * 8) % 10"
+  },
+  {
+   "q": "What does this Python code print?\n```python\nr = 1\nfor i in range(1, 13 + 1):\n    r = r * i % 1000\nprint(r)\n```",
+   "gold": "800",
+   "got": "800",
+   "ok": true,
+   "raw": "Let's go through the code step by step.\n\nWe have:\n\n```python\nr = 1\nfor i in range(1, 13 + 1):\n    r = r * i % 1000\nprint(r)\n```\n\n- `range(1, 13 + 1)` means `i` goes from 1 to 13 inclusive.\n- Each iteration: multiply `r` by `i`, then take modulo 1000.\n- This is essentially computing \\( 13! \\mod 1000 \\), but step-by-step with modulo at each stage.\n\nLet’s compute:\n\n- Start: r = 1\n- i=1: r = 1*1 % 1000 = 1\n- i=2: r = 1*2 % 1000 = 2\n- i=3: r = 2*3 = 6\n- i=4: r = 6*4 = 24\n- i=5: r = 24*5 = 120\n- i=6: "
+  },
+  {
+   "q": "What does this Python code print?\n```python\nr = 1\nfor i in range(1, 12 + 1):\n    r = r * i % 1000\nprint(r)\n```",
+   "gold": "600",
+   "got": "600",
+   "ok": true,
+   "raw": "Let's go through the code step-by-step.\n\nWe have:\n\n```python\nr = 1\nfor i in range(1, 12 + 1):\n    r = r * i % 1000\nprint(r)\n```\n\n- `range(1, 13)` means `i` goes from 1 to 12 inclusive.\n- Each time, `r` is multiplied by `i`, then modulo 1000 is taken.\n\nLet's compute:\n\n1. Start: r = 1  \n2. i=1: r = 1*1 % 1000 = 1  \n3. i=2: r = 1*2 % 1000 = 2  \n4. i=3: r = 2*3 % 1000 = 6  \n5. i=4: r = 6*4 % 1000 = 24  \n6. i=5: r = 24*5 % 1000 = 120  \n7. i=6: r = 120*6 % 1000 = 720  \n8. i=7: r = 720*7 = 5040 % 1000 "
+  },
+  {
+   "q": "What does this Python code print?\n```python\nr = 1\nfor i in range(1, 20 + 1):\n    r = r * i % 1000\nprint(r)\n```",
+   "gold": "0",
+   "got": "0",
+   "ok": true,
+   "raw": "Let's go through the code step by step.\n\nWe have:\n\n```python\nr = 1\nfor i in range(1, 20 + 1):\n    r = r * i % 1000\nprint(r)\n```\n\n- `range(1, 21)` means `i` goes from 1 to 20 inclusive.\n- Each time, `r` is multiplied by `i`, then modulo 1000 is taken.\n- This means we only keep the last three digits of the factorial at each step.\n\nLet's compute:\n\n- Start: r = 1\n- i=1: r = 1*1 % 1000 = 1\n- i=2: r = 1*2 % 1000 = 2\n- i=3: r = 2*3 = 6\n- i=4: r = 6*4 = 24\n- i=5: r = 24*5 = 120\n- i=6: r = 120*6 = 720\n- "
+  },
+  {
+   "q": "Sort these integers in ascending order and give them comma-separated: 54, 104, 168, 193, 120, 152, 65, 185, -25.",
+   "gold": "-25,54,65,104,120,152,168,185,193",
+   "got": "-25,54,65,104,120,152,168,185,193",
+   "ok": true,
+   "raw": "Let's sort the numbers step by step.\n\nList: 54, 104, 168, 193, 120, 152, 65, 185, -25  \n\nFirst, identify the smallest number: -25.  \nNext smallest: 54.  \nThen: 65.  \nThen: 104.  \nThen: 120.  \nThen: 152.  \nThen: 168.  \nThen: 185.  \nLargest: 193.  \n\nSo in ascending order: -25, 54, 65, 104, 120, 152, 168, 185, 193.\n\nANSWER: -25, 54, 65, 104, 120, 152, 168, 185, 193"
+  },
+  {
+   "q": "Sort these integers in ascending order and give them comma-separated: -12, 2, 93, 141, -31, 105, 125, 128, 84.",
+   "gold": "-31,-12,2,84,93,105,125,128,141",
+   "got": "-31,-12,2,84,93,105,125,128,141",
+   "ok": true,
+   "raw": "Let's sort the integers step by step.\n\nList: -12, 2, 93, 141, -31, 105, 125, 128, 84\n\n1. Identify the negative numbers: -12, -31.  \n   -31 is smaller than -12, so order: -31, -12.\n\n2. Now positive numbers: 2, 93, 141, 105, 125, 128, 84.  \n   Sort them: 2, 84, 93, 105, 125, 128, 141.\n\n3. Combine: -31, -12, 2, 84, 93, 105, 125, 128, 141.\n\nANSWER: -31, -12, 2, 84, 93, 105, 125, 128, 141"
+  },
+  {
+   "q": "Sort these integers in ascending order and give them comma-separated: 110, 192, 0, 80, 8, -60, 118, 119, 117.",
+   "gold": "-60,0,8,80,110,117,118,119,192",
+   "got": "-60,0,8,80,110,117,118,119,192",
+   "ok": true,
+   "raw": "Let's sort the integers in ascending order.\n\nList: 110, 192, 0, 80, 8, -60, 118, 119, 117\n\nStep 1: Identify the smallest number.  \n-60 is the smallest.\n\nStep 2: Next smallest is 0.\n\nStep 3: Then 8.\n\nStep 4: Then 80.\n\nStep 5: Then 110.\n\nStep 6: Then 117.\n\nStep 7: Then 118.\n\nStep 8: Then 119.\n\nStep 9: Largest is 192.\n\nSorted: -60, 0, 8, 80, 110, 117, 118, 119, 192\n\nANSWER: -60, 0, 8, 80, 110, 117, 118, 119, 192"
+  },
+  {
+   "q": "Sort these integers in ascending order and give them comma-separated: 62, 27, 80, 28, 113, 148, 170, -43, 38.",
+   "gold": "-43,27,28,38,62,80,113,148,170",
+   "got": "-43,27,28,38,62,80,113,148,170",
+   "ok": true,
+   "raw": "Let's sort the numbers step by step.\n\nList: 62, 27, 80, 28, 113, 148, 170, -43, 38.\n\nFirst, identify the smallest number: -43.  \nNext smallest: 27.  \nThen: 28.  \nThen: 38.  \nThen: 62.  \nThen: 80.  \nThen: 113.  \nThen: 148.  \nThen: 170.\n\nSo in ascending order: -43, 27, 28, 38, 62, 80, 113, 148, 170.\n\nANSWER: -43, 27, 28, 38, 62, 80, 113, 148, 170"
+  },
+  {
+   "q": "Sort these integers in ascending order and give them comma-separated: -60, 149, 40, 196, 166, 29, 125, -37, 189.",
+   "gold": "-60,-37,29,40,125,149,166,189,196",
+   "got": "-60,-37,29,40,125,149,166,189,196",
+   "ok": true,
+   "raw": "First, list the numbers: -60, 149, 40, 196, 166, 29, 125, -37, 189.  \nIdentify the negative numbers: -60 and -37. In ascending order, -60 < -37.  \nNow the positive numbers: 29, 40, 125, 149, 166, 189, 196.  \nArrange them in ascending order: 29, 40, 125, 149, 166, 189, 196.  \nCombine negatives and positives: -60, -37, 29, 40, 125, 149, 166, 189, 196.  \n\nANSWER: -60, -37, 29, 40, 125, 149, 166, 189, 196"
+  },
+  {
+   "q": "Sort these integers in ascending order and give them comma-separated: 57, 160, -21, 147, 40, 139, 136, -13, 163.",
+   "gold": "-21,-13,40,57,136,139,147,160,163",
+   "got": "-21,-13,40,57,136,139,147,160,163",
+   "ok": true,
+   "raw": "Let's sort the integers step by step.\n\nList: 57, 160, -21, 147, 40, 139, 136, -13, 163  \n\nFirst, separate negatives and positives:  \nNegatives: -21, -13  \nPositives: 57, 160, 147, 40, 139, 136, 163  \n\nOrder negatives: -21 < -13  \n\nOrder positives: 40, 57, 136, 139, 147, 160, 163  \n\nCombine: -21, -13, 40, 57, 136, 139, 147, 160, 163  \n\nANSWER: -21, -13, 40, 57, 136, 139, 147, 160, 163"
+  },
+  {
+   "q": "How many times does the letter \"e\" appear in the string \"tentensel\"?",
+   "gold": "3",
+   "got": "3",
+   "ok": true,
+   "raw": "Let's count the letter \"e\" in \"tentensel\".\n\n- t (no)  \n- e (1)  \n- n (no)  \n- t (no)  \n- e (2)  \n- n (no)  \n- s (no)  \n- e (3)  \n- l (no)\n\nThe letter \"e\" appears 3 times.\n\nANSWER: 3"
+  },
+  {
+   "q": "How many times does the letter \"o\" appear in the string \"modorselsel\"?",
+   "gold": "2",
+   "got": "2",
+   "ok": true,
+   "raw": "Let's count the letter \"o\" in the string \"modorselsel\".\n\n- m — not an o  \n- o — 1st \"o\"  \n- d — not an o  \n- o — 2nd \"o\"  \n- r — not an o  \n- s — not an o  \n- e — not an o  \n- l — not an o  \n- s — not an o  \n- e — not an o  \n- l — not an o  \n\nThe letter \"o\" appears 2 times.\n\nANSWER: 2"
+  },
+  {
+   "q": "How many times does the letter \"v\" appear in the string \"vertenlis\"?",
+   "gold": "1",
+   "got": "1",
+   "ok": true,
+   "raw": "Let's count the letter \"v\" in \"vertenlis\".\n\nThe string is: v e r t e n l i s\n\n- First letter: v → 1 occurrence  \n- No other \"v\" in the rest of the string.\n\nTotal: 1\n\nANSWER: 1"
+  },
+  {
+   "q": "How many times does the letter \"a\" appear in the string \"verdorraten\"?",
+   "gold": "1",
+   "got": "1",
+   "ok": true,
+   "raw": "Let's count the letter \"a\" in \"verdorraten\".\n\nv e r d o r r a t e n  \nLooking through:  \n- v: no  \n- e: no  \n- r: no  \n- d: no  \n- o: no  \n- r: no  \n- r: no  \n- a: yes (1)  \n- t: no  \n- e: no  \n- n: no  \n\nOnly one \"a\".\n\nANSWER: 1"
+  },
+  {
+   "q": "How many times does the letter \"l\" appear in the string \"raselmotenver\"?",
+   "gold": "1",
+   "got": "1",
+   "ok": true,
+   "raw": "Let's count the letter \"l\" in \"raselmotenver\".\n\nThe string is: r a s e l m o t e n v e r\n\nLooking through:\n\n- r → no  \n- a → no  \n- s → no  \n- e → no  \n- l → yes (1)  \n- m → no  \n- o → no  \n- t → no  \n- e → no  \n- n → no  \n- v → no  \n- e → no  \n- r → no  \n\nOnly 1 occurrence.\n\nANSWER: 1"
+  },
+  {
+   "q": "How many times does the letter \"a\" appear in the string \"quaquatenten\"?",
+   "gold": "2",
+   "got": "2",
+   "ok": true,
+   "raw": "Let's count the letter \"a\" in \"quaquatenten\".\n\nThe string is: q u a q u a t e n t e n\n\n- Position 3: a (1)\n- Position 6: a (2)\n\nNo other \"a\"s appear.\n\nSo the letter \"a\" appears 2 times.\n\nANSWER: 2"
+  }
+ ]
+}

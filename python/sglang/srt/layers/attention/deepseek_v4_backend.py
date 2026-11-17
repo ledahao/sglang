@@ -3449,6 +3449,13 @@ class DeepseekV4AttnBackend(
         """Runs on every ratio 1/2 layer before its attention."""
         if forward_batch.forward_mode.is_idle():
             return
+        if getattr(forward_batch, "dsv4_decoder_tail_replay", False):
+            # Layers 0-19 already published their KV. Layer 20's compressed
+            # KV was transferred; this window still has to publish indexer K.
+            if layer.layer_id < 20:
+                return
+            if layer.layer_id == 20:
+                run_compressor = False
         if forward_batch.encoder_swa_replay:
             run_compressor = False
         if layer.layer_id == self.tail_source_kv_layer_id:

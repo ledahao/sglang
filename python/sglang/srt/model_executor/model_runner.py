@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import inspect
 import logging
+import os
 import time
 from dataclasses import dataclass
 from typing import List, Optional, Union
@@ -2114,6 +2115,18 @@ class ModelRunner:
         Returns:
             A list of next_token_ids
         """
+        if (
+            os.environ.get("SGLANG_DSV4_ENCODER_ONLY_PREFILL", "") == "1"
+            or logits_output.next_token_logits is None
+        ):
+            # Encoder-only prefill never samples. Decode uses the same
+            # handoff when the logit tensor is missing.
+            return torch.full(
+                (int(forward_batch.batch_size),),
+                -1,
+                dtype=torch.int64,
+                device=forward_batch.input_ids.device,
+            )
         # LogitsProcessorOutput is normally invocation-scoped, but CUDA graph
         # runners may reuse backing objects. Never leak an auxiliary result from
         # a previous replay into a request with no observer state.

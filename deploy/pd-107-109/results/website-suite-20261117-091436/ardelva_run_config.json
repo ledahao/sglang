@@ -1,0 +1,58 @@
+{
+ "run_id": "website-suite-20261117-091436",
+ "model_key": "deepseek/v4.1-flash-1017@nvfp4",
+ "deploy_key": "split=pd-asym|P=tp8[L0-19]:prefill|D=tp8[L0-39]:decode|side=gpu|kv=fp8@hbm|spec=dspark",
+ "hw_key": "P=rtxpro5000-72g\u00d78(8/node;host:256G;tp:pcie5-xgmi;pp:pcie5-p2p;net:eth-200g)|D=rtxpro6000d-84g\u00d78(8/node;host:256G;tp:pcie5-xgmi;pp:pcie5-p2p;net:eth-200g)|P\u2192D=eth-200g",
+ "engine": "SGLang 0.5.23 853ee5a6 site-pkg website-suite-20261117-091436",
+ "tool": "run_full_website_suite.sh + ardelva_bench_pd.py + run_multiturn_pd.py + run_accuracy_pd.py",
+ "notes": "P mem.82 ck32768/eff4096 FlashMLA-sparse rocep37s0f0; L0-19+L20 KV. D mem.82 ck8192/eff1024 blk3 mlx5_0; script-now .72/4096, proc .82/8192. EP=attnDP=8 Mooncake Cmax64 :8000 c.3->.09. site-pkg 0.5.23 != wt 853ee5a6. Engram host off. NVFP4/FP8. Caveat: 3k/100k early-stop, out~half of 1000. 60k out=1000 but prompt=1 tok so in tok/s invalid; 95%&60000 are targets; C1 n=16. MT hit82% formula, success100 scripted; C1 8x5, C8 79/80, C32 r5 36/64 n259, C64 89/128 r5 40 n320; no ITL. 100k not full.",
+ "prefill": {
+  "pid": 377491,
+  "mem": "0.82",
+  "chunk": "32768",
+  "ib": "rocep37s0f0",
+  "block": "3",
+  "attn_dp": "8",
+  "tp": "8",
+  "ep": "8",
+  "mode": "prefill",
+  "backend": "flashmla_sparse",
+  "model": "/data/models/nvidia/DeepSeek-V4.1-Flash-1017-NVFP4",
+  "version": "0.5.23",
+  "site_packages": true,
+  "worktree": false,
+  "encoder_only_env": "1",
+  "mem_env": "0.82",
+  "chunk_env": "32768"
+ },
+ "decode": {
+  "pid": 1067594,
+  "mem": "0.82",
+  "chunk": "8192",
+  "ib": "mlx5_0",
+  "block": "3",
+  "attn_dp": "8",
+  "tp": "8",
+  "ep": "8",
+  "mode": "decode",
+  "backend": "",
+  "model": "/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4",
+  "version": "0.5.23",
+  "site_packages": true,
+  "worktree": false,
+  "encoder_only_env": "",
+  "mem_env": "0.82",
+  "chunk_env": "8192"
+ },
+ "prefill_script_defaults": {
+  "MEM_FRACTION": "0.82",
+  "CHUNKED_PREFILL": "32768"
+ },
+ "decode_script_defaults": {
+  "MEM_FRACTION": "0.72",
+  "CHUNKED_PREFILL": "4096"
+ },
+ "router": "http://127.0.0.1:8000",
+ "official_field": "verified",
+ "official_how": "request header x-ardelva-key; no body flag"
+}

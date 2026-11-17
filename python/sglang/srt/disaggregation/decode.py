@@ -2696,8 +2696,15 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
             )
         else:
             committed_output_id = output_id[0].item()
-        decode_req.req.output_ids.append(committed_output_id)
-        if not replayed_boundary:
+        # Encoder-only prefill publishes KV and no token. A negative id means
+        # this decode rank samples token 0 itself.
+        cache_only_handoff = committed_output_id < 0
+        # The producer wrote layers 0-19 and layer 20's global cache.
+        # This rank still has to run layers 20-39 on the prompt tail.
+        decode_req.req.dsv4_needs_tail_replay = bool(cache_only_handoff)
+        if not cache_only_handoff:
+            decode_req.req.output_ids.append(committed_output_id)
+        if not replayed_boundary and not cache_only_handoff:
             # The handoff token is generated on the prefill worker, so it does
             # not pass through the decode worker's normal batch-result path.
             # Account for it here using the same request-selected reasoning
@@ -2724,7 +2731,7 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
         decode_req.req.mm_audio_tokens = cached_tokens[5].item()
         decode_req.req.mm_video_tokens = cached_tokens[6].item()
         decode_req.req.mm_token_counts_ready = True
-        if not self.spec_algorithm.is_none():
+        if not self.spec_algorithm.is_none() and not cache_only_handoff:
             decode_req.req.output_topk_p = output_topk_p
             decode_req.req.output_topk_index = output_topk_index
             decode_req.req.hidden_states_tensor = output_hidden_states
@@ -2735,7 +2742,11 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
                 output_dsa_topk_indices = None
             decode_req.req.output_dsa_topk_indices = output_dsa_topk_indices
 
-        if decode_req.req.return_logprob and not replayed_boundary:
+        if (
+            decode_req.req.return_logprob
+            and not replayed_boundary
+            and not cache_only_handoff
+        ):
             decode_req.req.logprob.output_token_logprobs_val.append(
                 output_token_logprobs_val[0].item()
             )
@@ -3238,10 +3249,107 @@ class SchedulerDisaggregationDecodeMixin:
         return GenerationBatchResult()
 
     @scheduler_stage_method(SCHEDULER_STAGE_GET_NEXT_BATCH)
+
+    def _consume_dsv4_tail_replay(self: Scheduler):
+        """Fold a finished prompt-tail replay into the running decode batch."""
+        batch = self.last_batch
+        if batch is None or not getattr(batch, "dsv4_decoder_tail_replay", False):
+            return None
+        queued, result = self.result_queue.popleft()
+        del queued
+        self.last_batch = None
+        self.batch_result_processor.process_batch_result_prefill(batch, result)
+        # Admit through the normal prebuilt handoff. Merging this extend
+        # batch into a live decode mismatches the draft CUDA-graph buffers.
+        alive = []
+        for req in batch.reqs:
+            req.dsv4_needs_tail_replay = False
+            if not req.finished():
+                req.prefix_len = 0
+                alive.append(req)
+        if alive:
+            self.waiting_queue.extend(alive)
+        return None
+
+    def _pop_dsv4_tail_replay_batch(self: Scheduler):
+        """Build one extend of the last SWA window. KV slots are the ones prefill sent."""
+        window = 128
+        chosen = None
+        rest = []
+        for req in self.waiting_queue:
+            if chosen is None and getattr(req, "dsv4_needs_tail_replay", False):
+                chosen = req
+            else:
+                rest.append(req)
+        if chosen is None:
+            return None
+        self.waiting_queue = rest
+        req = chosen
+        req.refresh_fill_ids()
+        seq_len = len(req.origin_input_ids)
+        replay_len = min(window, seq_len)
+        start = seq_len - replay_len
+        req.prefix_len = start
+        req.extend_end = seq_len
+        slot = req.kv.req_pool_idx
+        if slot is None:
+            raise RuntimeError(f"DSV4 tail replay missing KV slot for {req.rid}")
+        from sglang.srt.model_executor.forward_batch_info import ForwardMode
+        from sglang.srt.sampling.sampling_batch_info import SamplingBatchInfo
+
+        batch = ScheduleBatch.init_new(
+            [req],
+            self.req_to_token_pool,
+            self.token_to_kv_pool_allocator,
+            self.tree_cache,
+            self.model_config,
+            self.enable_overlap,
+            self.spec_algorithm,
+        )
+        batch.forward_mode = ForwardMode.EXTEND
+        batch.dsv4_decoder_tail_replay = True
+        batch.can_run_dp_prefill_cuda_graph = False
+        device = self.req_to_token_pool.device
+        ids = list(req.origin_input_ids[start:seq_len])
+        batch.input_ids = async_h2d(ids, dtype=torch.int64, device=device)
+        batch.req_pool_indices = async_h2d([slot], dtype=torch.int64, device=device)
+        batch.req_pool_indices_cpu = torch.tensor([slot], dtype=torch.int64)
+        batch.seq_lens = async_h2d([seq_len], dtype=torch.int64, device=device)
+        batch.seq_lens_cpu = torch.tensor([seq_len], dtype=torch.int64)
+        batch.orig_seq_lens = batch.seq_lens
+        batch.seq_lens_sum = seq_len
+        batch.prefix_lens = [start]
+        batch.extend_lens = [replay_len]
+        batch.extend_num_tokens = replay_len
+        batch.extend_logprob_start_lens = [replay_len]
+        batch.extend_input_logprob_token_ids = None
+        loc = self.req_to_token_pool.req_to_token[slot, start:seq_len]
+        batch.out_cache_loc = loc.to(dtype=torch.int64)
+        batch.spec_info = None
+        batch.sampling_info = SamplingBatchInfo.from_schedule_batch(
+            batch,
+            batch.model_config.vocab_size,
+        )
+        logger.info(
+            "DSV4 tail replay: reqs=1 tokens=%s seq=%s",
+            replay_len,
+            seq_len,
+        )
+        return batch
+
     def get_next_disagg_decode_batch_to_run(
         self: Scheduler, running_batch: ScheduleBatch
     ) -> NextBatchPlan:
         """Process prebuilt batch and schedule the next decode batch."""
+        replayed = self._consume_dsv4_tail_replay()
+        if replayed is not None:
+            if running_batch.is_empty():
+                running_batch = replayed
+                if self.enable_hisparse:
+                    running_batch.hisparse_coordinator = self.hisparse_coordinator
+            else:
+                running_batch.merge_batch(replayed)
+
         # Process pending prebuilt batch: output processing + filter + merge
         new_prebuilt_batch = self.get_new_prebuilt_batch(running_batch)
         if new_prebuilt_batch:
@@ -3257,6 +3365,21 @@ class SchedulerDisaggregationDecodeMixin:
                         running_batch.hisparse_coordinator = self.hisparse_coordinator
                 else:
                     running_batch.merge_batch(new_prebuilt_batch)
+
+        # One prompt-tail replay anywhere stalls decode for this step on
+        # every rank, so the MLP collective stays in a single mode.
+        want_replay = [
+            1
+            if any(getattr(req, "dsv4_needs_tail_replay", False) for req in self.waiting_queue)
+            else 0
+        ]
+        agreed = all_reduce_flags(want_replay, self.tp_cpu_group, dist.ReduceOp.MAX)
+        if agreed[0]:
+            replay = self._pop_dsv4_tail_replay_batch()
+            replay = self.dp_attn_adapter.maybe_prepare_mlp_sync_batch(replay)
+            if replay:
+                set_schedule_time_batch(replay)
+            return NextBatchPlan(batch_to_run=replay, running_batch=running_batch)
 
         # Schedule decode batch
         if running_batch.is_empty():
@@ -3397,10 +3520,14 @@ class SchedulerDisaggregationDecodeMixin:
         can_run_list: List[Req] = []
         waiting_queue: List[Req] = []
 
-        for i in range(len(self.waiting_queue)):
-            req = self.waiting_queue[i]
+        taken = 0
+        for req in list(self.waiting_queue):
+            if getattr(req, "dsv4_needs_tail_replay", False):
+                waiting_queue.append(req)
+                continue
             # we can only add at least `num_not_used_batch` new batch to the running queue
-            if i < num_not_used_batch:
+            if taken < num_not_used_batch:
+                taken += 1
                 can_run_list.append(req)
                 # `pop_preallocated` matched and locked new requests; a retracted or
                 # rebootstrapped one owns its row, and a re-match here takes no lock.

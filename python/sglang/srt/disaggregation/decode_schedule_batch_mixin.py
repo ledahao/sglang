@@ -115,7 +115,12 @@ class ScheduleBatchDisaggregationDecodeMixin:
         """Assign the buffered last input id to schedule batch"""
         last_tokens: List[int] = []
         for req in self.reqs:
-            last_tokens.append(req.output_ids[-1])
+            if req.output_ids:
+                last_tokens.append(req.output_ids[-1])
+            else:
+                # Cache-only handoff: token 0 is sampled on this rank.
+                # The first decode step still needs the last prompt token.
+                last_tokens.append(int(req.origin_input_ids[-1]))
             # PREBUILT does not materialize a local SWA branching window.
             if req.swa_branching_seqlen is not None:
                 req.swa_branching_seqlen = None
@@ -125,7 +130,7 @@ class ScheduleBatchDisaggregationDecodeMixin:
                 try:
                     # if it is not None, then the grammar is from a retracted request, and we should not
                     # accept the token as it's already accepted
-                    if req.grammar.current_token is None:
+                    if req.grammar.current_token is None and req.output_ids:
                         req.grammar.accept_token(req.output_ids[-1])
                 except ValueError as e:
                     from sglang.srt.managers.schedule_batch import FINISH_ABORT

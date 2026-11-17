@@ -110,6 +110,15 @@ def sample_random_requests(
         ]
         # Shuffle the dataset.
         random.shuffle(dataset)
+        # A local ShareGPT slice can be shorter than --num-prompts.
+        # Tile it so concurrency 64 (256 prompts) is actually sent.
+        if dataset and len(dataset) < num_prompts:
+            copies = (num_prompts + len(dataset) - 1) // len(dataset)
+            print(
+                f"ShareGPT has {len(dataset)} conversations; "
+                f"repeating {copies} times to fill {num_prompts} prompts."
+            )
+            dataset = dataset * copies
 
         # Filter out sequences that are too long or too short
         input_requests: List[DatasetRow] = []

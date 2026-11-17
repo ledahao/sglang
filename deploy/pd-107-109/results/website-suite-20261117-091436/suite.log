@@ -1,0 +1,219 @@
+OUT=/home/aaron/pd/bench/runs/website-suite-20261117-091436
+== accuracy 2026-11-17 09:14:36
+== 精度检查 ardelva-qc-v1：40 题，temperature 0，8 路并行
+    → 答对 100.0% · 用时 16s
+== build realtext 2026-11-17 09:14:52
+3k: 256 prompts, target 3000 tokens, corpus 53199 -> /home/aaron/pd/bench/data/realtext/realtext_3k.jsonl
+10k: 256 prompts, target 10000 tokens, corpus 53199 -> /home/aaron/pd/bench/data/realtext/realtext_10k.jsonl
+32k: 256 prompts, target 32000 tokens, corpus 53199 -> /home/aaron/pd/bench/data/realtext/realtext_32k.jsonl
+== random-3k-hit0 2026-11-17 09:14:57
+healthy 2026-11-17 09:14:59
+PD bench → http://127.0.0.1:8000  backend=sglang-oai-chat
+  model=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  tokenizer=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  out=/home/aaron/pd/bench/runs/website-suite-20261117-091436/random-3k-hit0
+  matrix points≈4
+== 输入 3000 / 输出 1000 / 目标命中 0%
+  预热 C1 ×8 …
+  测量 isl3000_osl1000_hit0 C=1 请求数=32
+    → out 53.43 tok/s · in 159.4 tok/s · 首字后单流 57.92 tok/s · 首字后整段 53.48 tok/s · 活跃decode约 0.92 · TTFT p50/p95 480.91/2461.2 ms · TPOT p50/p95 17.265/25.42 ms · ITL p95/p99 55.193/55.645 ms · 命中 0.0% · 达标 96.9%（达标产能 51.35 tok/s） · 用时 314s
+  预热 C8 ×8 …
+  测量 isl3000_osl1000_hit0 C=8 请求数=32
+    → out 271.6 tok/s · in 810.1 tok/s · 首字后单流 43.99 tok/s · 首字后整段 272.7 tok/s · 活跃decode约 6.17 · TTFT p50/p95 580.69/2201.46 ms · TPOT p50/p95 22.731/27.852 ms · ITL p95/p99 63.23/141.13 ms · 命中 0.0% · 达标 100.0%（达标产能 271.6 tok/s） · 用时 71s
+  预热 C32 ×8 …
+  测量 isl3000_osl1000_hit0 C=32 请求数=128
+    → out 819.34 tok/s · in 2431.1 tok/s · 首字后单流 29.2 tok/s · 首字后整段 822.67 tok/s · 活跃decode约 28.06 · TTFT p50/p95 620.2/2643.12 ms · TPOT p50/p95 34.252/48.509 ms · ITL p95/p99 163.574/244.252 ms · 命中 0.0% · 达标 95.3%（达标产能 811.25 tok/s） · 用时 86s
+  预热 C64 ×8 …
+  测量 isl3000_osl1000_hit0 C=64 请求数=256
+    → out 1298.99 tok/s · in 3721.0 tok/s · 首字后单流 24.43 tok/s · 首字后整段 1303.35 tok/s · 活跃decode约 53.17 · TTFT p50/p95 913.9/4939.15 ms · TPOT p50/p95 40.931/65.602 ms · ITL p95/p99 181.945/263.938 ms · 命中 0.0% · 达标 55.5%（达标产能 856.78 tok/s） · 用时 112s
+
+共 4 个点，CSV：/home/aaron/pd/bench/runs/website-suite-20261117-091436/random-3k-hit0/ardelva_points.csv
+== random-3k-cold 2026-11-17 09:27:57
+healthy 2026-11-17 09:27:59
+PD bench → http://127.0.0.1:8000  backend=sglang-oai-chat
+  model=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  tokenizer=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  out=/home/aaron/pd/bench/runs/website-suite-20261117-091436/random-3k-cold
+  matrix points≈4
+== 输入 3000 / 输出 1000 / 目标命中 完全冷启动
+  预热 C1 ×8 …
+  测量 isl3000_osl1000_cold C=1 请求数=32
+    → out 47.51 tok/s · in 151.3 tok/s · 首字后单流 52.1 tok/s · 首字后整段 47.54 tok/s · 活跃decode约 0.91 · TTFT p50/p95 558.43/4421.3 ms · TPOT p50/p95 19.193/23.915 ms · ITL p95/p99 55.989/56.447 ms · 命中 0.0% · 达标 90.6%（达标产能 44.46 tok/s） · 用时 333s
+  预热 C8 ×8 …
+  测量 isl3000_osl1000_cold C=8 请求数=32
+    → out 274.27 tok/s · in 991.0 tok/s · 首字后单流 42.29 tok/s · 首字后整段 275.59 tok/s · 活跃decode约 6.49 · TTFT p50/p95 717.6/2997.5 ms · TPOT p50/p95 23.645/31.386 ms · ITL p95/p99 75.832/148.949 ms · 命中 0.0% · 达标 93.8%（达标产能 257.22 tok/s） · 用时 67s
+  预热 C32 ×8 …
+  测量 isl3000_osl1000_cold C=32 请求数=128
+    → out 786.11 tok/s · in 2104.0 tok/s · 首字后单流 28.79 tok/s · 首字后整段 789.09 tok/s · 活跃decode约 27.3 · TTFT p50/p95 658.74/2973.82 ms · TPOT p50/p95 34.73/49.746 ms · ITL p95/p99 167.842/240.343 ms · 命中 0.0% · 达标 91.4%（达标产能 745.77 tok/s） · 用时 97s
+  预热 C64 ×8 …
+  测量 isl3000_osl1000_cold C=64 请求数=256
+    → out 1182.52 tok/s · in 3484.2 tok/s · 首字后单流 22.87 tok/s · 首字后整段 1186.33 tok/s · 活跃decode约 51.71 · TTFT p50/p95 835.05/4853.67 ms · TPOT p50/p95 43.729/107.605 ms · ITL p95/p99 180.932/262.6 ms · 命中 0.0% · 达标 52.0%（达标产能 742.39 tok/s） · 用时 118s
+
+共 4 个点，CSV：/home/aaron/pd/bench/runs/website-suite-20261117-091436/random-3k-cold/ardelva_points.csv
+== random-60k-hit95 2026-11-17 09:41:30
+healthy 2026-11-17 09:41:32
+PD bench → http://127.0.0.1:8000  backend=sglang-oai-chat
+  model=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  tokenizer=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  out=/home/aaron/pd/bench/runs/website-suite-20261117-091436/random-60k-hit95
+  matrix points≈4
+== 输入 60000 / 输出 1000 / 目标命中 95%
+  预热 C1 ×1 …
+  测量 isl60000_osl1000_hit95 C=1 请求数=4
+    → out 41.65 tok/s · in 0.0 tok/s · 首字后单流 59.19 tok/s · 首字后整段 41.77 tok/s · 活跃decode约 0.7 · TTFT p50/p95 6228.69/11829.54 ms · TPOT p50/p95 16.895/22.823 ms · ITL p95/p99 55.25/55.585 ms · 命中 95.0% · 达标 50.0%（达标产能 20.83 tok/s） · 用时 405s
+  预热 C8 ×1 …
+  测量 isl60000_osl1000_hit95 C=8 请求数=16
+    → out 244.57 tok/s · in 0.2 tok/s · 首字后单流 52.56 tok/s · 首字后整段 250.87 tok/s · 活跃decode约 4.65 · TTFT p50/p95 3515.26/19297.43 ms · TPOT p50/p95 19.026/25.144 ms · ITL p95/p99 62.679/63.505 ms · 命中 95.0% · 达标 25.0%（达标产能 61.14 tok/s） · 用时 77s
+  预热 C32 ×1 …
+  测量 isl60000_osl1000_hit95 C=32 请求数=64
+    → out 632.71 tok/s · in 0.6 tok/s · 首字后单流 36.96 tok/s · 首字后整段 639.18 tok/s · 活跃decode约 17.12 · TTFT p50/p95 4084.03/21266.91 ms · TPOT p50/p95 27.056/33.962 ms · ITL p95/p99 89.809/274.83 ms · 命中 95.0% · 达标 39.1%（达标产能 247.15 tok/s） · 用时 112s
+  预热 C64 ×1 …
+  测量 isl60000_osl1000_hit95 C=64 请求数=128
+    → out 1088.2 tok/s · in 1.1 tok/s · 首字后单流 29.41 tok/s · 首字后整段 1098.8 tok/s · 活跃decode约 37.0 · TTFT p50/p95 5219.46/15542.53 ms · TPOT p50/p95 33.998/53.37 ms · ITL p95/p99 186.279/317.437 ms · 命中 95.0% · 达标 21.9%（达标产能 238.04 tok/s） · 用时 128s
+
+共 4 个点，CSV：/home/aaron/pd/bench/runs/website-suite-20261117-091436/random-60k-hit95/ardelva_points.csv
+== random-100k-hit0 2026-11-17 10:05:55
+healthy 2026-11-17 10:05:57
+PD bench → http://127.0.0.1:8000  backend=sglang-oai-chat
+  model=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  tokenizer=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  out=/home/aaron/pd/bench/runs/website-suite-20261117-091436/random-100k-hit0
+  matrix points≈4
+== 输入 100000 / 输出 1000 / 目标命中 0%
+  预热 C1 ×1 …
+  测量 isl100000_osl1000_hit0 C=1 请求数=4
+    → out 30.57 tok/s · in 2742.4 tok/s · 首字后单流 60.31 tok/s · 首字后整段 30.85 tok/s · 活跃decode约 0.51 · TTFT p50/p95 16302.34/17362.53 ms · TPOT p50/p95 16.58/18.272 ms · ITL p95/p99 50.731/51.005 ms · 命中 0.0% · 达标 25.0%（达标产能 6.34 tok/s） · 用时 129s
+  预热 C8 ×1 …
+  测量 isl100000_osl1000_hit0 C=8 请求数=16
+    → out 126.08 tok/s · in 11061.6 tok/s · 首字后单流 55.52 tok/s · 首字后整段 129.14 tok/s · 活跃decode约 2.27 · TTFT p50/p95 13404.88/51692.69 ms · TPOT p50/p95 18.012/21.657 ms · ITL p95/p99 54.869/99.347 ms · 命中 0.0% · 达标 12.5%（达标产能 11.01 tok/s） · 用时 102s
+  预热 C32 ×1 …
+  测量 isl100000_osl1000_hit0 C=32 请求数=64
+    → out 146.04 tok/s · in 15767.1 tok/s · 首字后单流 56.04 tok/s · 首字后整段 148.92 tok/s · 活跃decode约 2.61 · TTFT p50/p95 36682.0/127267.86 ms · TPOT p50/p95 17.845/23.027 ms · ITL p95/p99 62.273/139.029 ms · 命中 0.0% · 达标 0.0%（达标产能 0.0 tok/s） · 用时 240s
+  预热 C64 ×1 …
+  测量 isl100000_osl1000_hit0 C=64 请求数=128
+    → out 174.87 tok/s · in 19259.0 tok/s · 首字后单流 60.98 tok/s · 首字后整段 176.13 tok/s · 活跃decode约 2.87 · TTFT p50/p95 130620.59/237018.46 ms · TPOT p50/p95 16.398/25.043 ms · ITL p95/p99 69.785/145.767 ms · 命中 0.0% · 达标 0.8%（达标产能 1.36 tok/s） · 用时 372s
+
+共 4 个点，CSV：/home/aaron/pd/bench/runs/website-suite-20261117-091436/random-100k-hit0/ardelva_points.csv
+== random-100k-cold 2026-11-17 10:23:53
+healthy 2026-11-17 10:23:55
+PD bench → http://127.0.0.1:8000  backend=sglang-oai-chat
+  model=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  tokenizer=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  out=/home/aaron/pd/bench/runs/website-suite-20261117-091436/random-100k-cold
+  matrix points≈4
+== 输入 100000 / 输出 1000 / 目标命中 完全冷启动
+  预热 C1 ×1 …
+  测量 isl100000_osl1000_cold C=1 请求数=4
+    → out 19.88 tok/s · in 2901.8 tok/s · 首字后单流 51.61 tok/s · 首字后整段 20.94 tok/s · 活跃decode约 0.39 · TTFT p50/p95 10067.61/19459.04 ms · TPOT p50/p95 19.375/22.576 ms · ITL p95/p99 55.26/55.589 ms · 命中 0.0% · 达标 0.0%（达标产能 0.0 tok/s） · 用时 108s
+  预热 C8 ×1 …
+  测量 isl100000_osl1000_cold C=8 请求数=16
+    → out 121.54 tok/s · in 10771.0 tok/s · 首字后单流 49.52 tok/s · 首字后整段 126.67 tok/s · 活跃decode约 2.45 · TTFT p50/p95 19508.39/28584.9 ms · TPOT p50/p95 20.195/22.791 ms · ITL p95/p99 55.712/71.445 ms · 命中 0.0% · 达标 0.0%（达标产能 0.0 tok/s） · 用时 87s
+  预热 C32 ×1 …
+  测量 isl100000_osl1000_cold C=32 请求数=64
+    → out 160.85 tok/s · in 14987.7 tok/s · 首字后单流 60.71 tok/s · 首字后整段 165.9 tok/s · 活跃decode约 2.65 · TTFT p50/p95 63928.29/122832.08 ms · TPOT p50/p95 16.471/21.971 ms · ITL p95/p99 59.609/135.084 ms · 命中 0.0% · 达标 0.0%（达标产能 0.0 tok/s） · 用时 202s
+  预热 C64 ×1 …
+  测量 isl100000_osl1000_cold C=64 请求数=128
+    → out 148.12 tok/s · in 16107.2 tok/s · 首字后单流 61.9 tok/s · 首字后整段 149.79 tok/s · 活跃decode约 2.39 · TTFT p50/p95 122695.81/255068.99 ms · TPOT p50/p95 16.154/21.591 ms · ITL p95/p99 60.828/134.949 ms · 命中 0.0% · 达标 0.0%（达标产能 0.0 tok/s） · 用时 416s
+
+共 4 个点，CSV：/home/aaron/pd/bench/runs/website-suite-20261117-091436/random-100k-cold/ardelva_points.csv
+== realtext-3k 2026-11-17 10:41:30
+healthy 2026-11-17 10:41:32
+PD bench → http://127.0.0.1:8000  backend=sglang-oai-chat
+  model=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  tokenizer=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  out=/home/aaron/pd/bench/runs/website-suite-20261117-091436/realtext-3k
+  matrix points≈4
+== 数据集 custom:/home/aaron/pd/bench/data/realtext/realtext_3k.jsonl
+  预热 C1 ×1 …
+  测量 custom C=1 请求数=32
+    → out 55.81 tok/s · in 167.4 tok/s · 首字后单流 58.57 tok/s · 首字后整段 55.86 tok/s · 活跃decode约 0.95 · TTFT p50/p95 629.04/2215.18 ms · TPOT p50/p95 17.074/19.32 ms · ITL p95/p99 54.5/54.927 ms · 命中 0.0% · 达标 100.0%（达标产能 55.81 tok/s） · 用时 584s
+  预热 C8 ×1 …
+  测量 custom C=8 请求数=32
+    → out 313.48 tok/s · in 940.4 tok/s · 首字后单流 56.22 tok/s · 首字后整段 314.34 tok/s · 活跃decode约 5.58 · TTFT p50/p95 674.82/1389.33 ms · TPOT p50/p95 17.787/35.55 ms · ITL p95/p99 55.231/133.046 ms · 命中 0.0% · 达标 93.8%（达标产能 293.88 tok/s） · 用时 112s
+  预热 C32 ×1 …
+  测量 custom C=32 请求数=128
+    → out 987.8 tok/s · in 2963.4 tok/s · 首字后单流 38.24 tok/s · 首字后整段 992.63 tok/s · 活跃decode约 25.83 · TTFT p50/p95 1327.83/3594.33 ms · TPOT p50/p95 26.153/32.739 ms · ITL p95/p99 89.453/166.294 ms · 命中 0.0% · 达标 78.9%（达标产能 779.44 tok/s） · 用时 140s
+  预热 C64 ×1 …
+  测量 custom C=64 请求数=256
+    → out 1261.4 tok/s · in 3784.2 tok/s · 首字后单流 29.1 tok/s · 首字后整段 1263.66 tok/s · 活跃decode约 43.34 · TTFT p50/p95 1756.24/7227.24 ms · TPOT p50/p95 34.361/52.191 ms · ITL p95/p99 175.263/196.16 ms · 命中 0.0% · 达标 69.9%（达标产能 881.99 tok/s） · 用时 214s
+
+共 4 个点，CSV：/home/aaron/pd/bench/runs/website-suite-20261117-091436/realtext-3k/ardelva_points.csv
+== realtext-10k 2026-11-17 11:02:17
+healthy 2026-11-17 11:02:19
+PD bench → http://127.0.0.1:8000  backend=sglang-oai-chat
+  model=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  tokenizer=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  out=/home/aaron/pd/bench/runs/website-suite-20261117-091436/realtext-10k
+  matrix points≈4
+== 数据集 custom:/home/aaron/pd/bench/data/realtext/realtext_10k.jsonl
+  预热 C1 ×1 …
+  测量 custom C=1 请求数=32
+    → out 54.38 tok/s · in 543.8 tok/s · 首字后单流 59.61 tok/s · 首字后整段 54.48 tok/s · 活跃decode约 0.91 · TTFT p50/p95 1461.03/2312.48 ms · TPOT p50/p95 16.775/19.884 ms · ITL p95/p99 50.872/54.791 ms · 命中 0.0% · 达标 93.8%（达标产能 50.98 tok/s） · 用时 600s
+  预热 C8 ×1 …
+  测量 custom C=8 请求数=32
+    → out 356.19 tok/s · in 3561.9 tok/s · 首字后单流 55.03 tok/s · 首字后整段 360.95 tok/s · 活跃decode约 6.47 · TTFT p50/p95 2579.58/4398.46 ms · TPOT p50/p95 18.173/21.214 ms · ITL p95/p99 56.369/134.445 ms · 命中 0.0% · 达标 56.2%（达标产能 200.36 tok/s） · 用时 101s
+  预热 C32 ×1 …
+  测量 custom C=32 请求数=128
+    → out 928.12 tok/s · in 9281.2 tok/s · 首字后单流 39.03 tok/s · 首字后整段 936.57 tok/s · 活跃decode约 23.78 · TTFT p50/p95 5529.64/11950.91 ms · TPOT p50/p95 25.625/29.041 ms · ITL p95/p99 78.841/164.344 ms · 命中 0.0% · 达标 13.3%（达标产能 123.27 tok/s） · 用时 152s
+  预热 C64 ×1 …
+  测量 custom C=64 请求数=256
+    → out 1373.4 tok/s · in 13734.0 tok/s · 首字后单流 29.51 tok/s · 首字后整段 1377.45 tok/s · 活跃decode约 46.54 · TTFT p50/p95 5852.24/19943.44 ms · TPOT p50/p95 33.886/42.033 ms · ITL p95/p99 176.507/199.43 ms · 命中 0.0% · 达标 6.6%（达标产能 91.2 tok/s） · 用时 199s
+
+共 4 个点，CSV：/home/aaron/pd/bench/runs/website-suite-20261117-091436/realtext-10k/ardelva_points.csv
+== realtext-32k 2026-11-17 11:22:25
+healthy 2026-11-17 11:22:27
+PD bench → http://127.0.0.1:8000  backend=sglang-oai-chat
+  model=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  tokenizer=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  out=/home/aaron/pd/bench/runs/website-suite-20261117-091436/realtext-32k
+  matrix points≈4
+== 数据集 custom:/home/aaron/pd/bench/data/realtext/realtext_32k.jsonl
+  预热 C1 ×1 …
+  测量 custom C=1 请求数=32
+    → out 48.53 tok/s · in 1553.1 tok/s · 首字后单流 60.91 tok/s · 首字后整段 48.57 tok/s · 活跃decode约 0.8 · TTFT p50/p95 4442.93/5178.15 ms · TPOT p50/p95 16.417/18.829 ms · ITL p95/p99 54.119/54.834 ms · 命中 0.0% · 达标 3.1%（达标产能 1.52 tok/s） · 用时 674s
+  预热 C8 ×1 …
+  测量 custom C=8 请求数=32
+    → out 292.36 tok/s · in 9355.6 tok/s · 首字后单流 54.24 tok/s · 首字后整段 293.18 tok/s · 活跃decode约 5.39 · TTFT p50/p95 7112.92/9600.86 ms · TPOT p50/p95 18.437/21.828 ms · ITL p95/p99 56.776/139.289 ms · 命中 0.0% · 达标 15.6%（达标产能 45.68 tok/s） · 用时 124s
+  预热 C32 ×1 …
+  测量 custom C=32 请求数=128
+    → out 573.08 tok/s · in 18338.6 tok/s · 首字后单流 44.96 tok/s · 首字后整段 587.42 tok/s · 活跃decode约 12.75 · TTFT p50/p95 21759.4/44324.36 ms · TPOT p50/p95 22.24/27.986 ms · ITL p95/p99 78.169/156.397 ms · 命中 0.0% · 达标 0.0%（达标产能 0.0 tok/s） · 用时 238s
+  预热 C64 ×1 …
+  测量 custom C=64 请求数=256
+    → out 713.59 tok/s · in 22834.9 tok/s · 首字后单流 40.42 tok/s · 首字后整段 723.97 tok/s · 活跃decode约 17.65 · TTFT p50/p95 53966.87/94020.02 ms · TPOT p50/p95 24.74/31.817 ms · ITL p95/p99 90.695/171.105 ms · 命中 0.0% · 达标 0.0%（达标产能 0.0 tok/s） · 用时 382s
+
+共 4 个点，CSV：/home/aaron/pd/bench/runs/website-suite-20261117-091436/realtext-32k/ardelva_points.csv
+== think-10k-4k 2026-11-17 11:49:05
+healthy 2026-11-17 11:49:07
+PD bench → http://127.0.0.1:8000  backend=sglang-oai-chat
+  model=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  tokenizer=/data/aaron/models/nvidia--DeepSeek-V4.1-Flash-1017-NVFP4
+  out=/home/aaron/pd/bench/runs/website-suite-20261117-091436/think-10k-4k
+  matrix points≈4
+== 数据集 custom:/home/aaron/pd/bench/data/realtext/realtext_10k.jsonl
+  预热 C1 ×1 …
+  测量 custom C=1 请求数=32
+    → out 69.57 tok/s · in 173.9 tok/s · 首字后单流 71.57 tok/s · 首字后整段 69.57 tok/s · 活跃decode约 0.97 · TTFT p50/p95 669.9/1946.05 ms · TPOT p50/p95 13.972/15.562 ms · ITL p95/p99 50.829/51.253 ms · 命中 0.0% · 达标 96.9%（达标产能 67.39 tok/s） · 用时 1850s
+  预热 C8 ×1 …
+  测量 custom C=8 请求数=32
+    → out 498.26 tok/s · in 1245.6 tok/s · 首字后单流 66.29 tok/s · 首字后整段 498.81 tok/s · 活跃decode约 7.52 · TTFT p50/p95 655.96/2038.67 ms · TPOT p50/p95 15.085/17.169 ms · ITL p95/p99 56.006/56.548 ms · 命中 0.0% · 达标 100.0%（达标产能 498.26 tok/s） · 用时 267s
+  预热 C32 ×1 …
+  测量 custom C=32 请求数=128
+    → out 1122.92 tok/s · in 2807.3 tok/s · 首字后单流 46.4 tok/s · 首字后整段 1123.67 tok/s · 活跃decode约 24.2 · TTFT p50/p95 3185.99/7256.7 ms · TPOT p50/p95 21.553/26.807 ms · ITL p95/p99 77.952/157.036 ms · 命中 0.0% · 达标 46.1%（达标产能 517.6 tok/s） · 用时 468s
+  预热 C64 ×1 …
+  测量 custom C=64 请求数=256
+    → out 1576.21 tok/s · in 3940.5 tok/s · 首字后单流 36.64 tok/s · 首字后整段 1577.07 tok/s · 活跃decode约 43.02 · TTFT p50/p95 3284.84/14305.76 ms · TPOT p50/p95 27.294/44.069 ms · ITL p95/p99 96.488/178.459 ms · 命中 0.0% · 达标 46.5%（达标产能 732.69 tok/s） · 用时 663s
+
+共 4 个点，CSV：/home/aaron/pd/bench/runs/website-suite-20261117-091436/think-10k-4k/ardelva_points.csv
+== multiturn 2026-11-17 12:48:39
+healthy 2026-11-17 12:48:41
+== 多轮 multiturn:60000+5000x5 理论命中 82.0%
+  测量 multiturn:60000+5000x5 C=1 会话=8
+    → out 23.11 tok/s · in 3271.4 tok/s · 首字后单流 42.15 · 平均输入 70008 · TTFT 首轮 8975.6 / 后续 10974.8 ms · TTFT p50/p95 10691.31/15641.16 · TPOT p50/p95 23.723/28.347 · 用时 862s
+  测量 multiturn:60000+5000x5 C=8 会话=16
+    → out 118.07 tok/s · in 16823.5 tok/s · 首字后单流 45.13 · 平均输入 69877 · TTFT 首轮 19440.0 / 后续 20716.7 ms · TTFT p50/p95 19630.25/35960.99 · TPOT p50/p95 22.159/26.966 · 用时 335s
+  测量 multiturn:60000+5000x5 C=32 会话=64
+    → out 187.73 tok/s · in 25800.9 tok/s · 首字后单流 43.22 · 平均输入 68607 · TTFT 首轮 61562.7 / 后续 65530.6 ms · TTFT p50/p95 64067.58/137273.32 · TPOT p50/p95 23.137/30.115 · 用时 708s
+  测量 multiturn:60000+5000x5 C=64 会话=128
+    → out 188.07 tok/s · in 26020.9 tok/s · 首字后单流 45.48 · 平均输入 68274 · TTFT 首轮 100120.5 / 后续 103551.8 ms · TTFT p50/p95 101803.27/268500.85 · TPOT p50/p95 21.99/27.752 · 用时 877s
+merged 40 rows -> /home/aaron/pd/bench/runs/website-suite-20261117-091436/website_suite.csv
+SUITE_DONE /home/aaron/pd/bench/runs/website-suite-20261117-091436

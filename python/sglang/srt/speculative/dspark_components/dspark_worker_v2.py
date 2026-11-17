@@ -1,3 +1,4 @@
+import os
 import logging
 from typing import TYPE_CHECKING, Callable, Optional, Protocol, runtime_checkable
 
@@ -763,6 +764,30 @@ class DSparkWorkerV2(BaseSpecWorker):
                 on_publish(batch_output.new_seq_lens)
             return batch_output
         if batch.forward_mode.is_extend() or batch.is_extend_in_batch:
+            if getattr(batch, "dsv4_decoder_tail_replay", False):
+                # Target-only replay of the prompt tail. Draft KV for these
+                # rows is not injected; the next decode is seeded like a
+                # cache-only handoff so the draft graph stays a decode step.
+                self._verify_planner.note_non_decode_step()
+                batch_output = self.target_worker.forward_batch_generation(
+                    batch,
+                    pp_proxy_tensors=pp_proxy_tensors,
+                )
+                next_token_ids = batch_output.next_token_ids
+                self._tp_sync.sync(SpecTpSyncSite.DSPARK_TARGET, next_token_ids)
+                new_seq_lens = batch.seq_lens
+                batch_output.new_seq_lens = new_seq_lens
+                if on_publish is not None:
+                    on_publish(new_seq_lens)
+                logits_output = batch_output.logits_output
+                if logits_output is not None:
+                    logits_output.hidden_states = None
+                    logits_output.hidden_states_token_indices = None
+                batch_output.next_draft_input = make_next_draft_input(
+                    bonus_tokens=next_token_ids,
+                    new_seq_lens=new_seq_lens,
+                )
+                return batch_output
             if batch.is_extend_in_batch and self.enable_dp_spec_prefill_coordination:
                 plan = DPSpecPrefillCoordinationPlan(
                     *batch.dp_spec_prefill_coordination_metadata,
@@ -843,6 +868,18 @@ class DSparkWorkerV2(BaseSpecWorker):
         batch_output.new_seq_lens = new_seq_lens
         if on_publish is not None:
             on_publish(batch_output.new_seq_lens)
+
+        # Encoder-only prefill does not sample and does not hand the draft
+        # state to decode. Keep the draft pool for the PD layout handshake,
+        # and skip writing draft KV for the prompt.
+        if os.environ.get("SGLANG_DSV4_ENCODER_ONLY_PREFILL", "") == "1":
+            logits_output.hidden_states = None
+            logits_output.hidden_states_token_indices = None
+            batch_output.next_draft_input = make_next_draft_input(
+                bonus_tokens=next_token_ids,
+                new_seq_lens=new_seq_lens,
+            )
+            return batch_output
 
         if logits_output.hidden_states is None:
             raise RuntimeError(

@@ -1124,6 +1124,9 @@ class ForwardBatch(ForwardBatchDeepSeekMHAMixin):
         if _is_npu and get_parallel().dcp_enabled and not model_runner.is_draft_worker:
             ret.origin_out_cache_loc = ret.out_cache_loc
         ret._maybe_init_non_generation_fields(batch)
+        ret.dsv4_decoder_tail_replay = bool(
+            getattr(batch, "dsv4_decoder_tail_replay", False)
+        )
 
         device = model_runner.device
 
