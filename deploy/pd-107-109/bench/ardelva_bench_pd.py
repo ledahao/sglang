@@ -8,6 +8,8 @@ ardelva_bench_pd.py — 本机 PD 环境适配版（SGLang Prefill@109 + Decode@
   3. 在上游并发列表末尾按新规格补上 64（短/中点）；长 Prefill 点保持上游 [1,8]
   4. 采样默认与上游对齐：min_requests=32、req_per_conc=4、warmup=8、seed=1、
      stop_ttft=3000、slo=ttft:3000,tpot:50
+  6. 输入 tok/s = 本轮输入 token 总数 / 测试时长（与输出 tok/s 同一段 duration，不含预热）；
+     CSV 与 --post 都把 in_tps 放在 out_tps 后面。
   5. 无外网：优先本地 ShareGPT JSON（~/pd/bench/data/ShareGPT_local_mini.json）跑
      dataset=random；否则回退 random-ids。命中路径用 generated-shared-prefix
 
@@ -17,6 +19,16 @@ ardelva_bench_pd.py — 本机 PD 环境适配版（SGLang Prefill@109 + Decode@
 标准套件（与上游默认矩阵对齐，约 16 点）：
   ~/pd/bench/run_pd_bench.sh --out ~/pd/bench/runs/std1
 
+上游正式负载里 random 之外的部分：
+  python3 ardelva_bench_pd.py --realtext ~/pd/bench/data/realtext --think --multiturn
+  # 已有 random 结果、只补真实文本 / 思考 / 多轮：再加 --skip-random
+
+这次官网的 40 个点（random 20 + 真实文本/思考/多轮 20）一次跑完：
+  python3 ardelva_bench_pd.py --suite --out ~/pd/bench/runs/suite
+  # 3K random 与冷启动用固定 3000/1000（range ratio 1）。
+  # 60K 命中 95%、100K 与冷启动、真实文本 3k/10k/32k、思考 10k→4k、多轮，并发都到 C64。
+  # 过载即停关闭。BENCH_RANGE_RATIO 仍可覆盖 3K 的固定长度。
+
 自定义（语法同上游，命中写百分数或 cold）：
   ~/pd/bench/run_pd_bench.sh --matrix '3000:1000:0:1,8,32,64;60000:1000:95:1,8,32'
 """
@@ -24,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import random
 import json
 import os
 import re
@@ -31,6 +44,7 @@ import statistics
 import subprocess
 import sys
 import time
+from datetime import datetime
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -39,6 +53,15 @@ COLD = None  # hit=None → 完全冷启动
 
 # 与上游 ardelva_bench.DEFAULT_MATRIX 对齐的物理标定矩阵；
 # 新规格 max_running=64：在原 [1,8,32] 上补 64（100k 长 Prefill 仍保持 [1,8]）。
+# 2026-11-18 官网记录里的 20 个 random 点。--suite 再加真实文本、思考和多轮。
+SUITE_MATRIX = (
+    '3000:1000:0:1,8,32,64;'
+    '60000:1000:95:1,8,32,64;'
+    '100000:1000:0:1,8,32,64;'
+    '3000:1000:cold:1,8,32,64;'
+    '100000:1000:cold:1,8,32,64'
+)
+
 DEFAULT_MATRIX = [
     (3000, 1000, 0.0, [1, 8, 32, 64]),     # 短上下文：解码、MoE、通信
     # 60k×C64 易打爆 Prefill(72GB) indexer workspace；基线先到 C32
@@ -61,12 +84,13 @@ PD_DEFAULTS = {
     'engine': 'SGLang 0.5.23 PD 1M/C64 (P@109 + D@107, mooncake_tcp)',
 }
 
-# 与上游 CSV 列兼容（后几列可选）
+# 与上游 CSV 列兼容（后几列可选）。
+# tpot_p50（TPOT p50 ms）紧挨 ttft_p50 之后，--post 的 points 也按这个顺序带上。
 CSV_COLS = [
-    'isl', 'osl', 'hit', 'c', 'nreq', 'out_tps', 'ttft_p50', 'tpot_p50',
-    'ttft_p99', 'tpot_p99', 'total_tps', 'success', 'accept', 'ttft_t1', 'ttft_tn',
+    'isl', 'osl', 'hit', 'c', 'nreq', 'out_tps', 'in_tps', 'ttft_p50', 'tpot_p50',
+    'ttft_p99', 'tpot_p99', 'total_tps', 'success', 'accept', 'accept_rate', 'ttft_t1', 'ttft_tn',
     'ds', 'rate', 'slo_ttft', 'slo_tpot', 'slo_pct', 'good_tps', 'goodput',
-    'in_tps', 'after_ttft_tps', 'after_ttft_wave_tps',
+    'after_ttft_tps', 'after_ttft_wave_tps',
     'ttft_p95', 'tpot_p95', 'itl_p95', 'itl_p99',
     'active_decode_est',
 ]
@@ -196,16 +220,82 @@ def resolve_python(a) -> list[str]:
     return [sys.executable, '-m', 'sglang.benchmark.serving']
 
 
+
+_DECODE_LOG_HINT = Path('/tmp/decode-pcieipc.logpath')
+_DECODE_LOG_DIR = Path('/home/aaron/pd/logs')
+_ACCEPT_LINE = re.compile(
+    r'\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})[^\]]*TP0[^\]]*\].*'
+    r'accept len: ([0-9.]+), accept rate: ([0-9.]+)'
+)
+
+
+def decode_log_path() -> Path | None:
+    """Decode 日志路径。router 不回传 spec，accept 从这里的窗口读取。"""
+    if _DECODE_LOG_HINT.exists():
+        hinted = _DECODE_LOG_HINT.read_text().strip()
+        if hinted and Path(hinted).exists():
+            return Path(hinted)
+    logs = sorted(_DECODE_LOG_DIR.glob('pd-decode-107-pcieipc-*.log'))
+    return logs[-1] if logs else None
+
+
+def window_accept(start_epoch: float, end_epoch: float, log_path: Path | None = None):
+    """返回 [start_epoch, end_epoch] 内的 (accept_length, accept_rate, n_lines)。
+
+    每一行覆盖同样多的 forward step，所以窗口内的算术平均就是这个点的 accept。
+    """
+    path = log_path or decode_log_path()
+    if path is None or not path.exists() or end_epoch <= start_epoch:
+        return None, None, 0
+    start = datetime.fromtimestamp(start_epoch).replace(microsecond=0)
+    end = datetime.fromtimestamp(end_epoch)
+    lengths = []
+    rates = []
+    with path.open(errors='replace') as handle:
+        for line in handle:
+            if 'accept len:' not in line or ' TP0 ' not in line:
+                continue
+            matched = _ACCEPT_LINE.search(line)
+            if not matched:
+                continue
+            stamp = datetime.strptime(matched.group(1), '%Y-%m-%d %H:%M:%S')
+            if stamp < start or stamp > end:
+                continue
+            lengths.append(float(matched.group(2)))
+            rates.append(float(matched.group(3)))
+    if not lengths:
+        return None, None, 0
+    return (
+        sum(lengths) / len(lengths),
+        sum(rates) / len(rates),
+        len(lengths),
+    )
+
+
 # ---------------------------------------------------------------------------
 # dataset → sglang.benchmark.serving args
 # ---------------------------------------------------------------------------
 
-def _random_dataset_cli(isl: int, osl: int) -> list[str]:
+def _range_ratio(a, isl: int) -> str:
+    """随机长度的抽样比。环境变量优先。
+
+    --suite 的 3K random / 冷启动用 1，每条都是 3000/1000。
+    100K 保持 0，与 2026-11-18 那次实测的抽样一致。
+    """
+    env = os.environ.get('BENCH_RANGE_RATIO')
+    if env not in (None, ''):
+        return env
+    if getattr(a, 'suite', False) and isl <= 3000:
+        return '1'
+    return '0'
+
+
+def _random_dataset_cli(a, isl: int, osl: int) -> list[str]:
     """上游用 ShareGPT 采样再截断到 isl；有本地 JSON 则 dataset=random，否则 random-ids。"""
     base = [
         '--random-input-len', str(isl),
         '--random-output-len', str(osl),
-        '--random-range-ratio', os.environ.get('BENCH_RANGE_RATIO', '0'),
+        '--random-range-ratio', _range_ratio(a, isl),
     ]
     if os.path.isfile(LOCAL_SHAREGPT):
         return [
@@ -221,7 +311,7 @@ def dataset_args(a, isl, osl, hit):
     kind, _, rest = a.dataset.partition(':')
     if kind == 'random':
         if hit is COLD:
-            return _random_dataset_cli(isl, osl), f'isl{isl}_osl{osl}_cold'
+            return _random_dataset_cli(a, isl, osl), f'isl{isl}_osl{osl}_cold'
         if hit and hit > 0:
             # 对齐上游 random-prefix-len：共享前缀 ≈ isl*hit
             # 长上下文：少 groups + fast-prepare，避免本地造 57k×128 条卡死
@@ -241,18 +331,18 @@ def dataset_args(a, isl, osl, hit):
                 x.append('--gsp-fast-prepare')
             return x, f'isl{isl}_osl{osl}_hit{int(hit * 100)}'
 
-        return _random_dataset_cli(isl, osl), f'isl{isl}_osl{osl}_hit0'
+        return _random_dataset_cli(a, isl, osl), f'isl{isl}_osl{osl}_hit0'
     if kind == 'sharegpt':
         x = ['--dataset-name', 'sharegpt', '--dataset-path', rest]
         if a.output_len:
             x += ['--sharegpt-output-len', str(a.output_len)]
         return x, 'sharegpt'
     if kind == 'custom':
-        # sglang custom 无独立 output-len flag；需要固定长度时用 --extra
-        return (
-            ['--dataset-name', 'custom', '--dataset-path', rest],
-            'custom',
-        )
+        # sglang custom 复用 --sharegpt-output-len 作为固定输出长度
+        x = ['--dataset-name', 'custom', '--dataset-path', rest]
+        if a.output_len:
+            x += ['--sharegpt-output-len', str(a.output_len)]
+        return x, 'custom'
     if kind == 'prefix':
         # 复用 gsp：prefix_len:suffix_len:num_prefixes
         pl, sl, npf = (rest.split(':') + ['', '', ''])[:3]
@@ -537,7 +627,6 @@ def run_point(a, isl, osl, hit, c, outdir: Path, rate: float | None = None):
         'c': c,
         'nreq': n_denom,
         'out_tps': round(pick(res, 'output_throughput', default=0), 2),
-        'in_tps': round(pick(res, 'input_throughput', default=0), 1),
         'ttft_p50': round(pick(res, 'median_ttft_ms', default=0), 2),
         'tpot_p50': round(pick(res, 'median_tpot_ms', default=0), 3),
         'ttft_p95': round(pick(res, 'p95_ttft_ms', default=0), 2),
@@ -551,6 +640,7 @@ def run_point(a, isl, osl, hit, c, outdir: Path, rate: float | None = None):
         ) or '',
         'success': round(100.0 * min(done, n_denom) / n_denom, 2),
         'accept': '',
+        'accept_rate': '',
         'ds': ds_label(a.dataset) if a.dataset != 'random' else ('random:cold' if cold else 'random'),
     }
     if rate:
@@ -589,9 +679,36 @@ def run_point(a, isl, osl, hit, c, outdir: Path, rate: float | None = None):
         row['hit'] = target_hit
     if res.get('accept_length') is not None:
         row['accept'] = round(float(res['accept_length']), 2)
+    if res.get('accept_rate') is not None:
+        row['accept_rate'] = round(float(res['accept_rate']), 4)
+    # Chat responses through the PD router do not carry spec stats. The decode
+    # log's per-interval accept len is the same window, excluding warmup (t0
+    # is after warmup).
+    if row.get('accept') in ('', None):
+        # Decode stdout is block-buffered. A point's accept lines can land
+        # a few seconds after the client returns.
+        acc = rate = None
+        deadline = time.time() + 12
+        while True:
+            acc, rate, n_lines = window_accept(t0, time.time())
+            if n_lines or time.time() >= deadline:
+                break
+            time.sleep(0.4)
+        if acc is not None:
+            row['accept'] = round(acc, 2)
+        if rate is not None and row.get('accept_rate') in ('', None):
+            row['accept_rate'] = round(rate, 4)
 
     tpot_ms = float(pick(res, 'median_tpot_ms', default=0) or 0)
     dur = float(pick(res, 'duration', default=0) or 0)
+    # 端到端输入吞吐：本轮输入 token 总数 / 测试墙钟。分母与 out_tps 相同
+    # （sglang 结果里的 duration，不含预热），衡量整段测试的输入处理吞吐。
+    total_in_n = float(pick(res, 'total_input_tokens', default=0) or 0)
+    if dur > 0:
+        row['in_tps'] = round(total_in_n / dur, 2)
+    else:
+        raw_in = pick(res, 'input_throughput', default=None)
+        row['in_tps'] = round(float(raw_in), 2) if raw_in not in (None, '') else ''
     ttfts = [float(x) for x in (res.get('ttfts') or []) if x is not None]
     ttft_min = min(ttfts) if ttfts else float(pick(res, 'median_ttft_ms', default=0) or 0) / 1000.0
     total_out = float(pick(res, 'total_output_tokens', default=0) or 0)
@@ -604,13 +721,15 @@ def run_point(a, isl, osl, hit, c, outdir: Path, rate: float | None = None):
     row['active_decode_est'] = round(out_tps * tpot_ms / 1000.0, 2) if tpot_ms > 0 else ''
 
     print(
-        f'    → out {row["out_tps"]} tok/s · in {row["in_tps"]} tok/s · '
+        f'    → 输出 {row["out_tps"]} tok/s · 输入 {row["in_tps"]} tok/s · '
         f'首字后单流 {row["after_ttft_tps"]} tok/s · '
         f'首字后整段 {row["after_ttft_wave_tps"]} tok/s · '
         f'活跃decode约 {row["active_decode_est"]} · '
-        f'TTFT p50/p95 {row["ttft_p50"]}/{row["ttft_p95"]} ms · '
-        f'TPOT p50/p95 {row["tpot_p50"]}/{row["tpot_p95"]} ms · '
+        f'TTFT p50 {row["ttft_p50"]} ms · TPOT p50 {row["tpot_p50"]} ms · '
+        f'TTFT p95 {row["ttft_p95"]} ms · TPOT p95 {row["tpot_p95"]} ms · '
         f'ITL p95/p99 {row["itl_p95"]}/{row["itl_p99"]} ms · 命中 {row["hit"]}%'
+        + (f' · accept {row["accept"]}' if row.get('accept') != '' else '')
+        + (f' · accept rate {row["accept_rate"]}' if row.get('accept_rate') != '' else '')
         + (
             f' · 达标 {row["slo_pct"]}%（达标产能 {row["good_tps"]} tok/s）'
             if 'slo_pct' in row
@@ -620,6 +739,209 @@ def run_point(a, isl, osl, hit, c, outdir: Path, rate: float | None = None):
         flush=True,
     )
     return row
+
+
+
+def _mt_spec():
+    """多轮：60K 起，每轮加 5K，5 轮，每轮输出 500。"""
+    start, step, rounds, out = 60000, 5000, 5, 500
+    common = min(15000, start // 4)
+    user = step - out
+    prefix = start - max(common, user)
+    return dict(
+        start=start, step=step, rounds=rounds, out=out,
+        common=common, user=user, prefix=prefix,
+        label=f'multiturn:{start}+{step}x{rounds}',
+    )
+
+
+def _mt_nominal_hit(sp):
+    inp = [sp['start'] + k * sp['step'] for k in range(sp['rounds'])]
+    hit = [sp['common']] + [x - sp['user'] for x in inp[1:]]
+    return round(100 * sum(hit) / sum(inp), 1)
+
+
+def _mt_corpus(path: Path, tokens: int, seed: str) -> None:
+    rnd = random.Random(seed)
+    syl = [
+        'ka', 'lo', 'mi', 'ten', 'ra', 'sul', 've', 'dor', 'an', 'qui',
+        'pe', 'zo', 'ri', 'mon', 'tal', 'es', 'vin', 'cor', 'ul', 'ba',
+    ]
+    words = [
+        ''.join(rnd.choice(syl) for _ in range(rnd.randint(1, 3)))
+        for _ in range(4000)
+    ]
+    written = 0
+    with path.open('w') as handle:
+        while written < tokens * 9:
+            line = ' '.join(rnd.choice(words) for _ in range(40)) + '.\n'
+            handle.write(line)
+            written += len(line)
+
+
+def _mt_pct(xs, q):
+    xs = sorted(xs)
+    if not xs:
+        return None
+    return xs[min(len(xs) - 1, int(round(q / 100 * (len(xs) - 1))))]
+
+
+def _mt_accept_length(reqs):
+    num = den = 0.0
+    for req in reqs:
+        length = float(req.get('spec_accept_length') or 0)
+        weight = int(req.get('spec_verify_ct') or 0)
+        if length <= 0:
+            continue
+        if weight <= 0:
+            weight = int(req.get('output_num_tokens') or 0)
+        if weight <= 0:
+            continue
+        num += length * weight
+        den += weight
+    return round(num / den, 2) if den else ''
+
+
+def _mt_accept_rate(reqs):
+    correct = sum(int(req.get('spec_num_correct_drafts') or 0) for req in reqs)
+    proposed = sum(int(req.get('spec_num_proposed_drafts') or 0) for req in reqs)
+    return round(correct / proposed, 4) if proposed else ''
+
+
+def _mt_one(a, sp, c: int, outdir: Path) -> dict | None:
+    nconv = max(8, 2 * c)
+    scheduled = nconv * sp['rounds']
+    corpus_path = outdir / f'mt_corpus_c{c}.txt'
+    _mt_corpus(
+        corpus_path,
+        sp['common'] + nconv * (sp['prefix'] + 50) + sp['rounds'] * 2 * sp['user'] + 20000,
+        f'{time.time_ns()}-{c}',
+    )
+    conf = outdir / f'mt_c{c}.json'
+    constant = lambda v: {'distribution': 'constant', 'value': v}
+    conf.write_text(json.dumps({
+        'filetype': 'generate_conversations',
+        'num_conversations': nconv,
+        'text_files': [str(corpus_path)],
+        'prompt_input': {
+            'num_turns': constant(2 * sp['rounds']),
+            'common_prefix_num_tokens': constant(sp['common']),
+            'prefix_num_tokens': constant(sp['prefix']),
+            'num_tokens': constant(sp['user']),
+        },
+        'prompt_output': {'num_tokens': constant(sp['out'])},
+    }, indent=2))
+    stats = outdir / f'mt_c{c}_stats.json'
+    tool = Path.home() / 'pd/bench/multi_turn/benchmark_serving_multi_turn.py'
+    cmd = [
+        sys.executable, str(tool),
+        '-m', a.model, '--served-model-name', a.model,
+        '-u', a.base_url, '-i', str(conf),
+        '-p', str(c), '-k', str(c), '--seed', '1',
+        '--limit-min-tokens', str(sp['out']),
+        '--limit-max-tokens', str(sp['out']),
+        '--request-timeout-sec', '3600',
+        '--stats-json-output', str(stats),
+    ]
+    print(f'  测量 {sp["label"]} C={c} 会话={nconv}', flush=True)
+    t0 = time.time()
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(tool.parent))
+    t1 = time.time()
+    if proc.returncode != 0 or not stats.exists():
+        print(proc.stdout[-2000:], proc.stderr[-3000:], sep='\n', file=sys.stderr)
+        print(f'  ✗ 多轮 C={c} 失败 rc={proc.returncode}', flush=True)
+        return None
+    reqs = [r for r in json.loads(stats.read_text()) if r.get('ttft_ms', -1) > 0]
+    if not reqs:
+        print(f'  ✗ 多轮 C={c} 没有成功请求', flush=True)
+        return None
+    span = (
+        max(r['start_time_ms'] + r['latency_ms'] for r in reqs)
+        - min(r['start_time_ms'] for r in reqs)
+    ) / 1000
+    outs = sum(r['output_num_tokens'] for r in reqs)
+    ins = sum(r['input_num_tokens'] for r in reqs)
+    tpot = [
+        (r['latency_ms'] - r['ttft_ms']) / max(1, r['output_num_tokens'] - 1)
+        for r in reqs
+    ]
+    ttft = [r['ttft_ms'] for r in reqs]
+    first = [r['ttft_ms'] for r in reqs if r['input_num_turns'] <= 1]
+    later = [r['ttft_ms'] for r in reqs if r['input_num_turns'] > 1]
+    tpot_p50 = _mt_pct(tpot, 50) or 0
+    slo = a.slo if not isinstance(a.slo, str) else parse_slo(a.slo)
+    t_ms, p_ms = slo
+    good = []
+    for req in reqs:
+        n_out = req['output_num_tokens']
+        tp = (req['latency_ms'] - req['ttft_ms']) / (n_out - 1) if n_out > 1 else None
+        if req['ttft_ms'] <= t_ms and (tp is None or tp <= p_ms):
+            good.append(req)
+    row = {
+        'isl': round(ins / len(reqs)),
+        'osl': round(outs / len(reqs)),
+        'hit': _mt_nominal_hit(sp),
+        'c': c,
+        'nreq': len(reqs),
+        'out_tps': round(outs / span, 2) if span else '',
+        'in_tps': round(ins / span, 1) if span else '',
+        'ttft_p50': round(_mt_pct(ttft, 50), 2),
+        'tpot_p50': round(tpot_p50, 3),
+        'ttft_p99': round(_mt_pct(ttft, 99), 2),
+        'tpot_p99': round(_mt_pct(tpot, 99), 3),
+        'ttft_p95': round(_mt_pct(ttft, 95), 2),
+        'tpot_p95': round(_mt_pct(tpot, 95), 3),
+        'total_tps': round((ins + outs) / span, 2) if span else '',
+        'success': round(100.0 * len(reqs) / scheduled, 2),
+        'accept': _mt_accept_length(reqs),
+        'accept_rate': _mt_accept_rate(reqs),
+        'ttft_t1': round(statistics.median(first), 1) if first else '',
+        'ttft_tn': round(statistics.median(later), 1) if later else '',
+        'ds': sp['label'],
+        'slo_ttft': t_ms,
+        'slo_tpot': p_ms,
+        'slo_pct': round(100 * len(good) / scheduled, 1),
+        'good_tps': round(sum(r['output_num_tokens'] for r in good) / span, 2) if span else '',
+        'goodput': round(len(good) / span, 3) if span else '',
+        'after_ttft_tps': round(1000.0 / tpot_p50, 2) if tpot_p50 else '',
+        'active_decode_est': (
+            round((outs / span) * tpot_p50 / 1000.0, 2) if span and tpot_p50 else ''
+        ),
+    }
+    if row['accept'] == '':
+        acc, rate, _n = window_accept(t0, t1)
+        if acc is not None:
+            row['accept'] = round(acc, 2)
+        if rate is not None and row['accept_rate'] == '':
+            row['accept_rate'] = round(rate, 4)
+    print(
+        f'    → out {row["out_tps"]} tok/s · in {row["in_tps"]} tok/s · '
+        f'首字后单流 {row["after_ttft_tps"]} · 平均输入 {row["isl"]} · '
+        f'accept {row["accept"]} · '
+        f'TTFT 首轮 {row["ttft_t1"]} / 后续 {row["ttft_tn"]} ms · '
+        f'TTFT p50/p95 {row["ttft_p50"]}/{row["ttft_p95"]} · '
+        f'TPOT p50/p95 {row["tpot_p50"]}/{row["tpot_p95"]} · '
+        f'用时 {time.time() - t0:.0f}s',
+        flush=True,
+    )
+    return row
+
+
+def run_multiturn(a, outdir: Path) -> list[dict]:
+    """跑多轮 60K+5K×5，写出 ttft_t1 / ttft_tn，并按计划轮数计算成功率和达标率。"""
+    sp = _mt_spec()
+    rows = []
+    print(f'== 多轮 {sp["label"]} 理论命中 {_mt_nominal_hit(sp)}%', flush=True)
+    for c in [int(x) for x in (a.conc or '1,8,32,64').split(',') if x.strip()]:
+        row = _mt_one(a, sp, c, outdir)
+        if row:
+            rows.append(row)
+            (outdir / 'multiturn_points.json').write_text(
+                json.dumps(rows, ensure_ascii=False, indent=1)
+            )
+    if not rows:
+        print('  ✗ 多轮没有成功的点', file=sys.stderr, flush=True)
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -632,7 +954,7 @@ def post(a, rows: list[dict]):
         'gpu': a.gpu,
         'note': a.note,
         'points': [
-            {k: r.get(k, '') for k in CSV_COLS if k in r or k in ('isl', 'osl', 'hit', 'c', 'out_tps')}
+            {k: r.get(k, '') for k in CSV_COLS if k in r or k in ('isl', 'osl', 'hit', 'c', 'out_tps', 'in_tps', 'ttft_p50', 'tpot_p50')}
             for r in rows
         ],
     }
@@ -710,6 +1032,24 @@ def build_parser():
     )
     g2.add_argument('--stop-slo', type=float, default=50,
                     help='过载即停的达标率门槛 %%（默认 50）')
+    g2.add_argument('--realtext', default='',
+                    help='tools/build_realtext 目录。random 之后再跑其中的 realtext_*.jsonl')
+    g2.add_argument('--think', action='store_true',
+                    help='再用 realtext_10k 跑长输出（思考 / 代码生成）')
+    g2.add_argument('--think-output', type=int, default=4000)
+    g2.add_argument('--think-conc', default='1,8,32,64')
+    g2.add_argument('--multiturn', action='store_true',
+                    help='再跑多轮 60K+5K×5，写出 ttft_t1 / ttft_tn')
+    g2.add_argument('--skip-random', action='store_true',
+                    help='不跑 random 矩阵，只跑 --realtext / --think / --multiturn')
+    g2.add_argument(
+        '--suite', action='store_true',
+        help=(
+            '跑 2026-11-18 官网的 40 个点：固定 3K/1K 的 random 与冷启动，'
+            '60K 命中 95%%、100K 与冷启动、真实文本 3k/10k/32k、思考 10k→4k、多轮，'
+            '并发到 C64，关闭过载即停'
+        ),
+    )
 
     g3 = p.add_argument_group('输出 / 提交')
     g3.add_argument('--out', default='~/pd/bench/runs/latest')
@@ -729,6 +1069,17 @@ def build_parser():
 
 def main():
     a = build_parser().parse_args()
+    if a.suite:
+        if not a.matrix:
+            a.matrix = SUITE_MATRIX
+        if '--stop-ttft' not in sys.argv:
+            a.stop_ttft = 0
+        if not a.realtext:
+            a.realtext = '~/pd/bench/data/realtext'
+        a.think = True
+        a.multiturn = True
+        if not a.conc:
+            a.conc = '1,8,32,64'
     a._tmpl_err = False
     a._skipped = []
     a.slo = parse_slo(a.slo)
@@ -750,86 +1101,134 @@ def main():
         )
         sys.exit(2)
 
+    def conc_list(spec: str, default: str = '1,8,32,64') -> list[int]:
+        return [int(c) for c in (spec or default).split(',') if c.strip()]
+
+    stages: list[tuple[str, list, int]] = []
     if a.smoke:
         # 规格与上游 DEFAULT_MATRIX 首点一致（3000/1000），但压低样本量保持冒烟快
-        matrix = [(3000, 1000, 0.0, [1])]
+        stages.append(('random', [(3000, 1000, 0.0, [1])], 0))
         a.min_requests = min(a.min_requests, 4)
         a.req_per_conc = min(a.req_per_conc, 2)
         a.warmup = min(a.warmup, 1)
-    elif a.dataset == 'random':
+    elif a.dataset == 'random' and not a.skip_random:
         matrix = parse_matrix(a.matrix) if a.matrix else DEFAULT_MATRIX
-    else:
-        matrix = [(0, a.output_len or 0, 0.0,
-                   [int(c) for c in (a.conc or '1,4,8,16,32,64').split(',')])]
+        stages.append(('random', matrix, 0))
+    elif a.dataset != 'random':
+        matrix = [(0, a.output_len or 0, 0.0, conc_list(a.conc, '1,4,8,16,32,64'))]
+        stages.append((a.dataset, matrix, a.output_len))
 
+    # 上游 --realtext / --think：真实文本与长输出。32k 与短文本同一并发列表。
+    if not a.smoke and (a.dataset == 'random' or a.skip_random) and (a.realtext or a.think):
+        root = Path(os.path.expanduser(a.realtext or '~/pd/bench/data/realtext'))
+        text_conc = conc_list(a.conc)
+        if a.realtext:
+            files = sorted(root.glob('realtext_*.jsonl'), key=lambda p: (len(p.stem), p.stem))
+            if not files:
+                raise SystemExit(f'--realtext 目录里没有 realtext_*.jsonl：{root}')
+            for fn in files:
+                stages.append((
+                    f'custom:{fn.resolve()}',
+                    [(0, a.output_len or 1000, 0.0, text_conc)],
+                    a.output_len or 1000,
+                ))
+        if a.think:
+            t10 = root / 'realtext_10k.jsonl'
+            if not t10.exists():
+                raise SystemExit(f'--think 需要 {t10}')
+            stages.append((
+                f'custom:{t10.resolve()}',
+                [(0, a.think_output, 0.0, conc_list(a.think_conc))],
+                a.think_output,
+            ))
+
+    n_points = sum(len(cs) for _, mtx, _ in stages for *_, cs in mtx)
     print(
         f'PD bench → {a.base_url}  backend={a.backend}\n'
         f'  model={a.model}\n'
         f'  tokenizer={a.tokenizer}\n'
         f'  out={outdir}\n'
-        f'  matrix points≈{sum(len(cs) for *_, cs in matrix)}',
+        f'  stages={len(stages)}  points≈{n_points}'
+        + ('  + multiturn' if a.multiturn and not a.smoke else ''),
         flush=True,
     )
 
     rows = []
     failed = []
-    for isl, osl, hit, cs in matrix:
-        if a.dataset == 'random':
-            print(
-                f'== 输入 {isl} / 输出 {osl} / 目标命中 '
-                + ('完全冷启动' if hit is COLD else f'{hit:.0%}'),
-                flush=True,
-            )
-        else:
-            print(f'== 数据集 {a.dataset}', flush=True)
-        for c in ([] if a.only_rate and a.rate else cs):
-            if not wait_healthy(a.base_url):
-                print('  ✗ 服务不健康，中止本轮矩阵（需重启 Prefill/Decode）', file=sys.stderr, flush=True)
-                failed.append('infra_unhealthy')
-                a._tmpl_err = True
-                break
-            r = run_point(a, isl, osl, hit, c, outdir)
-            if r:
-                rows.append(r)
-                # 逐点落盘，避免长矩阵中途崩溃丢全部 CSV
-                csv_path = outdir / 'ardelva_points.csv'
-                with open(csv_path, 'w', newline='') as f:
-                    w = csv.DictWriter(f, fieldnames=CSV_COLS, extrasaction='ignore')
-                    w.writeheader()
-                    w.writerows(rows)
-            if a._tmpl_err:
-                break
-            rest = [x for x in cs if x > c]
-            if (
-                r and rest and a.stop_ttft
-                and r.get('ttft_p50', 0) > a.stop_ttft
-                and r.get('slo_pct', 0) < a.stop_slo
-            ):
-                msg = (
-                    f"random {isl}/{osl} C{'/C'.join(map(str, rest))} 跳过"
-                    f"（C{c} 已过载：TTFT p50 {r['ttft_p50']/1000:.1f}s）"
+    saved_dataset, saved_output = a.dataset, a.output_len
+    for stage_ds, matrix, stage_out in stages:
+        a.dataset = stage_ds
+        if stage_out:
+            a.output_len = stage_out
+        if a._tmpl_err:
+            break
+        for isl, osl, hit, cs in matrix:
+            if a.dataset == 'random':
+                print(
+                    f'== 输入 {isl} / 输出 {osl} / 目标命中 '
+                    + ('完全冷启动' if hit is COLD else f'{hit:.0%}'),
+                    flush=True,
                 )
-                print('  ⏭ ' + msg, flush=True)
-                a._skipped.append(msg)
-                break
-        if a.rate and not a._tmpl_err:
-            for rt in [float(x) for x in a.rate.split(',') if x.strip()]:
-                r = run_point(a, isl, osl, hit, a.rate_cap, outdir, rate=rt)
+            else:
+                print(f'== 数据集 {a.dataset}', flush=True)
+            for c in ([] if a.only_rate and a.rate else cs):
+                if not wait_healthy(a.base_url):
+                    print('  ✗ 服务不健康，中止本轮矩阵（需重启 Prefill/Decode）', file=sys.stderr, flush=True)
+                    failed.append('infra_unhealthy')
+                    a._tmpl_err = True
+                    break
+                r = run_point(a, isl, osl, hit, c, outdir)
                 if r:
                     rows.append(r)
+                    # 逐点落盘，避免长矩阵中途崩溃丢全部 CSV
                     csv_path = outdir / 'ardelva_points.csv'
                     with open(csv_path, 'w', newline='') as f:
                         w = csv.DictWriter(f, fieldnames=CSV_COLS, extrasaction='ignore')
                         w.writeheader()
                         w.writerows(rows)
-        if a.dataset == 'random' and not any(
-            row.get('isl') == isl and row.get('osl') == osl for row in rows[-len(cs) - 5:]
-        ):
-            # 粗略检测本行是否全挂
-            pass
-        if a._tmpl_err:
-            failed.append(ds_label(a.dataset))
-            break
+                if a._tmpl_err:
+                    break
+                rest = [x for x in cs if x > c]
+                if (
+                    r and rest and a.stop_ttft
+                    and r.get('ttft_p50', 0) > a.stop_ttft
+                    and r.get('slo_pct', 0) < a.stop_slo
+                ):
+                    msg = (
+                        f"random {isl}/{osl} C{'/C'.join(map(str, rest))} 跳过"
+                        f"（C{c} 已过载：TTFT p50 {r['ttft_p50']/1000:.1f}s）"
+                    )
+                    print('  ⏭ ' + msg, flush=True)
+                    a._skipped.append(msg)
+                    break
+            if a.rate and not a._tmpl_err:
+                for rt in [float(x) for x in a.rate.split(',') if x.strip()]:
+                    r = run_point(a, isl, osl, hit, a.rate_cap, outdir, rate=rt)
+                    if r:
+                        rows.append(r)
+                        csv_path = outdir / 'ardelva_points.csv'
+                        with open(csv_path, 'w', newline='') as f:
+                            w = csv.DictWriter(f, fieldnames=CSV_COLS, extrasaction='ignore')
+                            w.writeheader()
+                            w.writerows(rows)
+            if a.dataset == 'random' and not any(
+                row.get('isl') == isl and row.get('osl') == osl for row in rows[-len(cs) - 5:]
+            ):
+                # 粗略检测本行是否全挂
+                pass
+            if a._tmpl_err:
+                failed.append(ds_label(a.dataset))
+                break
+    a.dataset, a.output_len = saved_dataset, saved_output
+
+    if a.multiturn and not a.smoke and not a._tmpl_err:
+        mt_out = outdir / 'multiturn'
+        mt_out.mkdir(parents=True, exist_ok=True)
+        mt_rows = run_multiturn(a, mt_out)
+        if mt_rows:
+            rows.extend(mt_rows)
+        else:
+            failed.append('multiturn')
 
     csv_path = outdir / 'ardelva_points.csv'
     with open(csv_path, 'w', newline='') as f:
