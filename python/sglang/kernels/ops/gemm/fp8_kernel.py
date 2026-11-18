@@ -821,7 +821,9 @@ def w8a8_block_fp8_matmul_triton(
 
     # Split-K accumulates K in SPLIT_K separate fp32 partials, so its results
     # do not match the single-accumulator kernels bit-for-bit.
-    hopper_tuned = get_platform().is_sm90 and (
+    # SM120 decode is the untuned BLOCK_M=64 fallback. Use the SM90 split-K
+    # kernel only when this shape's config asks for it. Large-M entries do not.
+    hopper_tuned = (get_platform().is_sm90 or get_platform().is_sm120) and (
         config.get("SWAP_AB", False) or config.get("SPLIT_K", 1) > 1
     )
     if hopper_tuned:

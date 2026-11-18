@@ -973,6 +973,20 @@ class SchedulerDisaggregationPrefillMixin:
         ):
             if req.inflight_middle_chunks <= 0:
                 req.time_stats.set_prefill_finished_time()
+                if not getattr(req, "_pd_prefill_exec_logged", False):
+                    _fwd = req.time_stats.forward_entry_time
+                    _done = req.time_stats.prefill_finished_time
+                    if _fwd > 0.0 and _done > 0.0:
+                        from sglang.srt.observability.pd_stage import log_pd_stage
+
+                        log_pd_stage(
+                            req,
+                            "prefill",
+                            "prefill_exec",
+                            (_done - _fwd) * 1000.0,
+                            _done,
+                        )
+                        req._pd_prefill_exec_logged = True
 
                 # Its KV never landed: abort instead of sending it to decode.
                 if req.discard_output_reason is not None:
@@ -1233,6 +1247,17 @@ class SchedulerDisaggregationPrefillMixin:
                 req.disagg_kv_sender.clear()
                 done_reqs.append(req)
                 req.time_stats.set_prefill_kv_transfer_finish_time()
+                if not getattr(req, "_pd_publish_logged", False):
+                    from sglang.srt.observability.pd_stage import log_pd_stage
+
+                    log_pd_stage(
+                        req,
+                        "prefill",
+                        "kv_publish_done",
+                        None,
+                        req.time_stats.prefill_kv_transfer_finish_time,
+                    )
+                    req._pd_publish_logged = True
             elif poll == KVPoll.Failed:
                 self.handle_inflight_transfer_failure(req)
                 done_reqs.append(req)

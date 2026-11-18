@@ -120,6 +120,9 @@ class RequestFuncOutput:
     spec_cap_length: float = 0.0
     spec_block_accept_length: float = 0.0
     spec_cap_lens_histogram: List[int] = field(default_factory=list)
+    spec_verify_ct: int = 0
+    spec_num_correct_drafts: int = 0
+    spec_num_proposed_drafts: int = 0
 
     @staticmethod
     def init_new(request_func_input: RequestFuncInput):
@@ -259,6 +262,68 @@ def _extract_cache_from_sglext(data, output):
             + (details.get("storage") or 0)
         )
         output.cached_tokens_details = details
+
+
+def _extract_spec_from_payload(data, output):
+    """Copy this request's speculative stats onto the benchmark output.
+
+    OpenAI chat puts them on ``sglext.spec_tokens_details`` when the request
+    sets ``return_spec_tokens_details``. The native generate API puts the same
+    fields on ``meta_info``. Streaming spec chunks often have ``choices: []``.
+    """
+    sglext = data.get("sglext") or {}
+    details = sglext.get("spec_tokens_details")
+    if isinstance(details, list):
+        details = details[0] if details else None
+    if not isinstance(details, dict):
+        choices = data.get("choices") or []
+        meta = {}
+        if choices and isinstance(choices[0], dict):
+            meta = choices[0].get("meta_info") or {}
+        if not meta:
+            meta = data.get("meta_info") or {}
+        if any(k in meta for k in ("spec_accept_length", "spec_verify_ct")):
+            details = meta
+        else:
+            return
+    if details.get("spec_accept_length") is not None:
+        output.spec_accept_length = float(details.get("spec_accept_length") or 0.0)
+    if details.get("spec_verify_ct"):
+        output.spec_verify_ct = int(details["spec_verify_ct"])
+    if details.get("spec_num_correct_drafts") is not None:
+        output.spec_num_correct_drafts = int(details.get("spec_num_correct_drafts") or 0)
+    if details.get("spec_num_proposed_drafts") is not None:
+        output.spec_num_proposed_drafts = int(
+            details.get("spec_num_proposed_drafts") or 0
+        )
+
+
+def _window_spec_metrics(outputs):
+    """Accept length and rate for this benchmark window only.
+
+    Accept length is completion tokens per verify step, including the bonus
+    token. That is SGLang's ``avg_spec_accept_length`` and the upstream
+    ardelva column ``1 + accepted_drafts / draft_steps``. Weight by verify
+    count so a short request does not count the same as a long one. The
+    lifetime average on ``/server_info`` is not this window.
+    """
+    length_num = length_den = 0.0
+    correct = proposed = 0
+    for output in outputs:
+        if not getattr(output, "success", False):
+            continue
+        length = float(getattr(output, "spec_accept_length", 0.0) or 0.0)
+        verify_ct = int(getattr(output, "spec_verify_ct", 0) or 0)
+        if length > 0:
+            weight = verify_ct if verify_ct > 0 else int(output.output_len or 0)
+            if weight > 0:
+                length_num += length * weight
+                length_den += weight
+        correct += int(getattr(output, "spec_num_correct_drafts", 0) or 0)
+        proposed += int(getattr(output, "spec_num_proposed_drafts", 0) or 0)
+    accept_length = (length_num / length_den) if length_den > 0 else None
+    accept_rate = (correct / proposed) if proposed > 0 else None
+    return accept_length, accept_rate
 
 
 def _record_server_prompt_len(data, output):
@@ -517,10 +582,12 @@ async def async_request_openai_chat_completions(
                             "completion_tokens", output_len
                         )
                         _record_server_prompt_len(response_json, output)
+                        _extract_spec_from_payload(response_json, output)
                         _meta_info = response_json["choices"][0].get("meta_info") or {}
-                        output.spec_accept_length = (
-                            _meta_info.get("spec_accept_length", 0.0) or 0.0
-                        )
+                        if not output.spec_accept_length:
+                            output.spec_accept_length = (
+                                _meta_info.get("spec_accept_length", 0.0) or 0.0
+                            )
                         output.spec_cap_length = (
                             _meta_info.get("spec_cap_length", 0.0) or 0.0
                         )
@@ -545,6 +612,8 @@ async def async_request_openai_chat_completions(
                                 pass
                             else:
                                 data = json.loads(chunk)
+                                # Spec stats arrive on a choices=[] sglext chunk.
+                                _extract_spec_from_payload(data, output)
                                 # Check for usage info in final chunks. OpenAI-compatible
                                 # servers may emit usage-only chunks with choices=[].
                                 output_len = (data.get("usage") or {}).get(
@@ -760,6 +829,7 @@ async def async_request_sglang_generate(
                             data = orjson.loads(sse_data)
 
                             _meta_info = data.get("meta_info") or {}
+                            _extract_spec_from_payload(data, output)
                             if _meta_info.get("spec_accept_length") is not None:
                                 output.spec_accept_length = _meta_info[
                                     "spec_accept_length"
@@ -1661,6 +1731,12 @@ async def benchmark(
     else:
         accept_length = None
 
+    # /server_info on the PD router is 404, and on decode the average is the
+    # process lifetime. Prefer the requests that belong to this point.
+    window_accept, window_rate = _window_spec_metrics(outputs)
+    if window_accept is not None:
+        accept_length = window_accept
+
     # Compute metrics and print results
     benchmark_duration = time.perf_counter() - benchmark_start_time
     metrics, output_lens = calculate_metrics(
@@ -1903,6 +1979,7 @@ async def benchmark(
             "p99_itl_ms": metrics.p99_itl_ms,
             "concurrency": metrics.concurrency,
             "accept_length": accept_length,
+            "accept_rate": window_rate,
             "max_output_tokens_per_s": metrics.max_output_tokens_per_s,
             "max_concurrent_requests": metrics.max_concurrent_requests,
         }
@@ -2065,6 +2142,9 @@ def run_benchmark(args_: argparse.Namespace):
             print("WARNING: --cache-report is only supported with sglang backends.")
         elif args.backend in ("sglang-oai", "sglang-oai-chat"):
             extra_request_body["return_cached_tokens_details"] = True
+
+    if args.backend in ("sglang-oai", "sglang-oai-chat"):
+        extra_request_body.setdefault("return_spec_tokens_details", True)
 
     # Inject bootstrap fields for fake decode benchmarking
     if getattr(args, "fake_prefill", False):

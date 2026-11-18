@@ -310,7 +310,11 @@ def sample_generated_shared_prefix_requests(
         if input_ids:
             prompt_len = len(turn_prompts[0])
         elif fast_prepare:
-            prompt_len = 1
+            # Nominal lengths. Recording 1 here made input_lens and input
+            # throughput report one token for a long shared prefix.
+            prompt_len = int(system_prompt_lens[sampled_g]) + int(
+                question_lens[src_g, src_p, 0]
+            )
         else:
             prompt_len = len(tokenizer.encode(turn_prompts[0]))
         output_len_val = int(output_lens[src_g, src_p])

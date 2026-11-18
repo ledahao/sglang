@@ -363,6 +363,12 @@ class SchedulerBatchResultProcessor:
                     else:
                         # req output_ids are set here
                         req.output_ids.append(next_token_id)
+                        if self.disaggregation_mode == DisaggregationMode.DECODE:
+                            from sglang.srt.observability.pd_stage import (
+                                maybe_log_first_token,
+                            )
+
+                            maybe_log_first_token(req)
 
                         self._maybe_update_reasoning_tokens(req, next_token_id)
 
@@ -1044,6 +1050,12 @@ class SchedulerBatchResultProcessor:
                 new_accept_len = 0
             else:
                 req.output_ids.extend(next_token_id)
+                if self.disaggregation_mode == DisaggregationMode.DECODE:
+                    from sglang.srt.observability.pd_stage import (
+                        maybe_log_first_token,
+                    )
+
+                    maybe_log_first_token(req)
                 new_accept_len = len(next_token_id)
                 self._maybe_update_reasoning_tokens(req, next_token_id)
             req.update_finish_state(new_accept_len)

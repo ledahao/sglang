@@ -657,3 +657,88 @@ def fp4_index_logits_paged(
         num_warps=4,
     )
     return out
+
+
+@triton.jit
+def _compressed_decode_slots_kernel(
+    req_ptr,
+    table_ptr,
+    lens_ptr,
+    out_ptr,
+    L,
+    ratio,
+    stride_row,
+    stride_col,
+    BLOCK: tl.constexpr,
+    NPROG: tl.constexpr,
+):
+    """slots[b, j] = floor_div(table[req[b], j * ratio], ratio), else 0.
+
+    Triton integer division truncates toward zero. The correction matches
+    torch floor division for a positive ratio, including negative pool ids.
+    Tiles past the visible prefix are not written; the logits kernel does
+    not read them.
+    """
+    b = tl.program_id(0)
+    pid = tl.program_id(1)
+    n_vis = tl.minimum(tl.load(lens_ptr + b).to(tl.int64), L)
+    n_tiles = (n_vis + BLOCK - 1) // BLOCK
+    req = tl.load(req_ptr + b).to(tl.int64)
+    for tile in range(pid, n_tiles, NPROG):
+        offs = tile * BLOCK + tl.arange(0, BLOCK)
+        offs64 = offs.to(tl.int64)
+        valid = offs64 < n_vis
+        col = offs64 * ratio
+        v = tl.load(
+            table_ptr + req * stride_row + col * stride_col,
+            mask=valid,
+            other=0,
+        ).to(tl.int64)
+        quot = v // ratio
+        rem = v % ratio
+        quot = tl.where((v < 0) & (rem != 0), quot - 1, quot)
+        quot = tl.where(valid, quot, 0)
+        tl.store(out_ptr + b * L + offs, quot, mask=offs64 < L)
+
+
+def compressed_decode_slots(
+    req: torch.Tensor,
+    req_to_token: torch.Tensor,
+    lens: torch.Tensor,
+    lmax: int,
+    ratio: int,
+) -> torch.Tensor:
+    """Fused decode indexer slots. Same values as the eager gather and floor.
+
+    ``slots[b, j]`` is 0 when ``j >= lens[b]``. Otherwise it is
+    ``floor_div(int64(req_to_token[req[b], j * ratio]), ratio)``, toward -inf.
+    """
+    if ratio <= 0:
+        raise ValueError(f"compress ratio must be positive, got {ratio}")
+    if req_to_token.dim() != 2:
+        raise ValueError("req_to_token must be rank 2")
+    batch = req.shape[0]
+    slots = torch.empty((batch, lmax), dtype=torch.int64, device=req.device)
+    if batch == 0 or lmax == 0:
+        return slots
+    req_c = req if req.is_contiguous() else req.contiguous()
+    if lens.dtype == torch.int64 and lens.is_contiguous():
+        lens_c = lens
+    else:
+        lens_c = lens.to(dtype=torch.int64).contiguous()
+    block = 128
+    nprog = 128
+    _compressed_decode_slots_kernel[(batch, nprog)](
+        req_c,
+        req_to_token,
+        lens_c,
+        slots,
+        lmax,
+        int(ratio),
+        req_to_token.stride(0),
+        req_to_token.stride(1),
+        BLOCK=block,
+        NPROG=nprog,
+        num_warps=4,
+    )
+    return slots

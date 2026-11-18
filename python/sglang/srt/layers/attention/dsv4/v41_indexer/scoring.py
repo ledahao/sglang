@@ -11,6 +11,7 @@ import msgspec
 import torch
 
 from sglang.kernels.ops.attention.dsv4.fp4_indexer import (
+    compressed_decode_slots,
     finish_paged_indexer_topk,
     flat_selection_slots,
     fp4_index_logits_decode,
@@ -531,10 +532,7 @@ def decode_scores(
             has_candidate_mask=candidate_mask is not None,
         )
     inputs.reset_outputs()
-    j = torch.arange(lmax, device=pos.device)
-    valid = j[None, :] < lens[:, None]
-    slots = req_to_token[req[:, None], (j * ratio)[None, :]].to(torch.int64) // ratio
-    slots = slots.masked_fill(~valid, 0)
+    slots = compressed_decode_slots(req, req_to_token, lens, lmax, ratio)
     scores = fp4_index_logits_decode(
         q, weights, slots, lens, table, table.shape[1] // 68
     )
