@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Optional, Protocol
 
@@ -9,6 +10,14 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+_span_choice_logged: set[str] = set()
+
+
+def _env_enabled(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "n", "off"}
 
 DSA_DENSE = "dense"
 DSA_SPARSE = "sparse"
@@ -70,15 +79,48 @@ def create_attention_graph_variants(hf_config) -> Optional[AttentionGraphVariant
 
 DSV41_CANDIDATE_FILTERED = "candidate_filtered"
 DSV41_CANDIDATE_UNFILTERED = "candidate_unfiltered"
-# SGLANG_OPT_DSV41_TARGET_METADATA_EARLY serves these target verify variants (requests
-# up to the candidate span); longer ones keep the in-graph metadata upgrade.
-DSV41_EARLY_VERIFY_VARIANTS = frozenset({DSV41_CANDIDATE_UNFILTERED})
+# Filtered graphs score only this many tokens. Ascending, each above the
+# candidate span. A longer request stays on the page-table filtered graph.
+DSV41_FILTERED_SPAN_BUCKETS: tuple[tuple[str, int], ...] = (
+    ("candidate_filtered_32k", 32 * 1024),
+    ("candidate_filtered_64k", 64 * 1024),
+    ("candidate_filtered_128k", 128 * 1024),
+    ("candidate_filtered_192k", 192 * 1024),
+    ("candidate_filtered_256k", 256 * 1024),
+)
+# SGLANG_OPT_DSV41_TARGET_METADATA_EARLY serves these target verify variants.
+# Filtered span buckets install the same metadata as candidate_filtered, so they
+# share that early path instead of the in-graph upgrade.
+DSV41_EARLY_VERIFY_VARIANTS = frozenset(
+    {DSV41_CANDIDATE_UNFILTERED, DSV41_CANDIDATE_FILTERED}
+    | {label for label, _ in DSV41_FILTERED_SPAN_BUCKETS}
+)
+
+
+def captured_token_span(variant: Optional[str], indexer) -> Optional[int]:
+    """Token ceiling baked into a candidate graph.
+
+    None keeps the page-table width. The ceiling is the variant contract, never
+    the length of whatever request happens to be on the GPU during capture.
+    """
+    if variant == DSV41_CANDIDATE_UNFILTERED:
+        return indexer.candidate_topk_blocks * indexer.candidate_block_size
+    if variant == "candidate_c2_all":
+        return indexer.index_topk * 2
+    for label, limit in DSV41_FILTERED_SPAN_BUCKETS:
+        if variant == label:
+            return limit
+    return None
 
 
 @dataclass(frozen=True)
 class Dsv41CandidateGraphVariants:
-    """Candidate-indexer graphs keyed by the batch's longest request; a variant
-    below its limit skips low-ratio scoring or candidate filtering."""
+    """Candidate-indexer graphs keyed by the batch's longest request.
+
+    Variants at or below the candidate span may skip low-ratio scoring or
+    candidate filtering. Wider filtered buckets keep that filtering and only
+    shorten the scored columns to their own ceiling.
+    """
 
     # (label, max_seq_len it serves), ascending; the last label is the fallback.
     graph_limits: tuple[tuple[str, int], ...]
@@ -86,18 +128,35 @@ class Dsv41CandidateGraphVariants:
     verify_extra_tokens: int = 0
 
     def select(self, forward_batch: ForwardBatch) -> str:
-        lengths = getattr(forward_batch, "seq_lens_cpu", None)
-        max_seq_len = None
-        if lengths is not None and lengths.device.type == "cpu" and lengths.numel() > 0:
-            max_seq_len = int(lengths.max())
-        if max_seq_len is None and self.verify_extra_tokens:
-            # Includes acceptance still in flight, without a GPU-to-CPU copy.
-            max_seq_len = getattr(
+        device_len = _cpu_seq_len_max(forward_batch)
+        bound = None
+        if self.verify_extra_tokens:
+            # Lifetime bound, including acceptance still in flight.
+            bound = getattr(
                 getattr(forward_batch, "spec_info", None),
                 "candidate_max_seq_len_upper_bound",
                 None,
             )
-        return self.select_for_max_seq_len(max_seq_len)
+        if device_len is None:
+            max_seq_len = bound
+        elif bound is None:
+            max_seq_len = device_len
+        else:
+            # A short CPU mirror must not hide a request that can outgrow
+            # the captured span, and a short budget must not hide a longer KV.
+            max_seq_len = max(device_len, int(bound))
+        variant = self.select_for_max_seq_len(max_seq_len)
+        if variant not in _span_choice_logged:
+            _span_choice_logged.add(variant)
+            logger.info(
+                "candidate graph select variant=%s max_seq_len=%s "
+                "device_len=%s bound=%s",
+                variant,
+                max_seq_len,
+                device_len,
+                bound,
+            )
+        return variant
 
     def select_for_max_seq_len(self, max_seq_len: Optional[int]) -> str:
         """The variant for a batch whose longest request (before this step's verify
@@ -108,6 +167,22 @@ class Dsv41CandidateGraphVariants:
                 if max_seq_len <= limit:
                     return variant
         return DSV41_CANDIDATE_FILTERED
+
+
+
+def _cpu_seq_len_max(forward_batch: ForwardBatch) -> Optional[int]:
+    """Max live CPU length, or None when the batch has no host mirror."""
+    lengths = getattr(forward_batch, "seq_lens_cpu", None)
+    if lengths is None or not hasattr(lengths, "numel"):
+        return None
+    device = getattr(lengths, "device", None)
+    if device is None or device.type != "cpu" or lengths.numel() == 0:
+        return None
+    n = int(lengths.numel())
+    bs = getattr(forward_batch, "batch_size", None)
+    if isinstance(bs, int) and 0 < bs < n:
+        lengths = lengths[:bs]
+    return int(lengths.max())
 
 
 def create_dsv41_candidate_graph_variants(
@@ -154,10 +229,22 @@ def create_dsv41_candidate_graph_variants(
         graph_limits.append((variant, min(limit, span)))
         if limit >= span:
             break
+    # Above the candidate span the indexer still filters. Each extra graph
+    # scores only its own ceiling, and select() refuses a ceiling that cannot
+    # hold the batch. The final candidate_filtered label keeps the page table.
+    buckets_on = _env_enabled("SGLANG_DSV41_SPAN_BUCKETS", True)
+    if buckets_on:
+        for label, limit in DSV41_FILTERED_SPAN_BUCKETS:
+            if limit > span:
+                graph_limits.append((label, limit))
+    short_cols = _env_enabled("SGLANG_DSV41_SHORT_COLS", True)
     logger.info(
-        "Candidate indexer graph limits: %s; use full filtering above %s.",
+        "Candidate indexer graph limits: %s; page-table filtering above %s. "
+        "span_buckets=%s short_cols=%s",
         graph_limits,
-        span,
+        graph_limits[-1][1],
+        int(buckets_on),
+        int(short_cols),
     )
     return Dsv41CandidateGraphVariants(
         graph_limits=tuple(graph_limits),

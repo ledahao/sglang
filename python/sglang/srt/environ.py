@@ -1893,7 +1893,7 @@ class Envs:
     # metadata glue graph where its backend declares the prep host-free.
     SGLANG_OPT_DSV41_TARGET_VERIFY_METADATA_GLUE = EnvBool(False)
     # DSpark static verify: build the target verify metadata on a side stream beside the
-    # draft graph, for requests up to the candidate span (needs the glue switch above).
+    # draft graph (needs the glue switch above). Filtered span buckets are included.
     SGLANG_OPT_DSV41_TARGET_METADATA_EARLY = EnvBool(False)
     # Decode / verify graph replays whose metadata glue graph is captured skip the
     # replay ForwardBatch view (the graph reads slots and buffers by address).

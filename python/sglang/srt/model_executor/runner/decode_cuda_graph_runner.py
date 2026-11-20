@@ -1251,6 +1251,10 @@ class DecodeCudaGraphRunner(BaseCudaGraphRunner):
             self._capture()
 
     def _capture(self) -> None:
+        # Default-off. Records instantiate deps only when SGLANG_GRAPH_DEPS=1.
+        from sglang.srt.model_executor.graph_deps_diag import arm_graph_deps_diag
+
+        arm_graph_deps_diag()
         # Warm up + autotune kernels once before capture (run-once across the
         # decode + prefill runners; see BaseRunner.warmup).
         self.warmup()
@@ -1832,10 +1836,14 @@ class DecodeCudaGraphRunner(BaseCudaGraphRunner):
         # seq_lens_cpu / seq_lens_sum / req_pool_indices / out_cache_loc when the
         # runtime mode is IDLE, so IDLE and active DECODE are different python branches
         # and must not share a captured graph. Under the early metadata the variant
-        # picks the prep's branch too (early install or Raw copy).
+        # picks the prep's branch too; every early variant installs the same metadata,
+        # so they share one glue graph.
         key = (bs, str(self.capture_forward_mode), actual_mode)
         if self._early_verify_metadata is None:
             return key
+        # Every early variant installs the same metadata, so they share one glue graph.
+        if attention_variant in DSV41_EARLY_VERIFY_VARIANTS:
+            return key + ("early",)
         return key + (attention_variant,)
 
     def _prep_attention_variant(self, attention_variant):

@@ -5,6 +5,8 @@ a selection back into pool slots."""
 from __future__ import annotations
 
 import itertools
+import logging
+import os
 from typing import TYPE_CHECKING, Iterator, List, Optional, Tuple
 
 import msgspec
@@ -27,6 +29,8 @@ from sglang.srt.runtime_context import get_platform
 from sglang.srt.utils.common import async_h2d
 
 from .types import DecodeInputs, PrefillInputs
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from sglang.srt.layers.attention.dsv4.dsv41_sparse import DeepseekV41Indexer
@@ -472,6 +476,48 @@ class PagedDecodeScores(msgspec.Struct, frozen=True):
     has_candidate_mask: bool
 
 
+def _captured_short_cols(indexer, ratio: int, lmax: int) -> int:
+    """Columns this CUDA graph may score.
+
+    ``candidate_unfiltered`` and ``candidate_c2_all`` replay only inside their
+    token contract. Each ``candidate_filtered_<N>k`` graph scores ``N * 1024``
+    tokens and is selected only when every request's budget and committed KV
+    fit that ceiling. Eager replay and the page-table ``candidate_filtered``
+    graph keep ``lmax``. The width is the variant ceiling, not a capture-time
+    length, so replay cannot truncate a longer row.
+    """
+    from sglang.srt.layers.attention.graph_variants import captured_token_span
+    from sglang.srt.model_executor.runner_utils.capture_mode import (
+        get_capture_attention_variant,
+    )
+
+    variant = get_capture_attention_variant()
+    if ratio <= 0:
+        return lmax
+    raw = os.environ.get("SGLANG_DSV41_SHORT_COLS")
+    if raw is not None and raw.strip().lower() in {"0", "false", "no", "n", "off"}:
+        return lmax
+    span = captured_token_span(variant, indexer)
+    if span is None or span <= 0:
+        return lmax
+    shortened = min(lmax, span // ratio)
+    seen = getattr(_captured_short_cols, "logged_keys", None)
+    if seen is None:
+        seen = set()
+        _captured_short_cols.logged_keys = seen
+    key = (variant, ratio)
+    if shortened < lmax and key not in seen:
+        seen.add(key)
+        logger.info(
+            "candidate indexer short cols variant=%s ratio=%s lmax %s -> %s",
+            variant,
+            ratio,
+            lmax,
+            shortened,
+        )
+    return shortened
+
+
 def decode_scores(
     *,
     inputs: DecodeInputs,
@@ -495,9 +541,11 @@ def decode_scores(
         return None
     lens = (pos + 1) // ratio
     metadata = inputs.paged_metadata
-    # V4 reserves the replay bound in metadata; visibility stays on device.
-    # A capture-time length read would both synchronize and truncate replay.
+    # V4 reserves the full-context bound in metadata. A short-context graph
+    # still scores only up to the variant limit baked in at capture; reading
+    # the live length here would synchronize and would truncate replay.
     lmax = min(metadata.max_compressed_seq_len, req_to_token.shape[1] // ratio)
+    lmax = _captured_short_cols(indexer, ratio, lmax)
     if lmax == 0:
         inputs.reset_outputs()
         return None

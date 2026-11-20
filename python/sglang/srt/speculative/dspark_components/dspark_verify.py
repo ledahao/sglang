@@ -115,9 +115,14 @@ def candidate_request_length_bound(
     reqs, pending_verify_tokens: int = 0
 ) -> Optional[int]:
     """Bound committed positions without reading asynchronous acceptance results.
+
     The overlap loop can hold one unprocessed result, so reserve its full width;
-    the runner adds the current verify width. Aborted/embedding/multimodal requests
-    return None: their visible token IDs may not track cache positions."""
+    the runner adds the current verify width. The bound is the larger of the
+    token budget, the current sequence, and KV already committed, so a prefix
+    that is longer than ``origin_input_ids`` cannot enter the short graph.
+    Aborted/embedding/multimodal requests return None: their visible token IDs
+    may not track cache positions.
+    """
     if not reqs:
         return None
     longest = 0
@@ -131,7 +136,26 @@ def candidate_request_length_bound(
             or getattr(req, "multimodal_inputs", None) is not None
         ):
             return None
-        longest = max(longest, len(req.origin_input_ids) + budget)
+        visible = len(req.origin_input_ids) + budget
+        current = visible
+        seqlen = getattr(req, "seqlen", None)
+        if isinstance(seqlen, int):
+            current = seqlen
+        kv = getattr(req, "kv", None)
+        committed = int(getattr(kv, "kv_committed_len", 0) or 0)
+        covered = max(visible, current, committed)
+        if (
+            covered > visible
+            and not getattr(candidate_request_length_bound, "raised", False)
+        ):
+            logger.info(
+                "candidate length bound raised visible=%s current=%s committed=%s",
+                visible,
+                current,
+                committed,
+            )
+            candidate_request_length_bound.raised = True
+        longest = max(longest, covered)
     return longest + pending_verify_tokens
 
 
