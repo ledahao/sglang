@@ -2784,7 +2784,18 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
 
         decode_req.kv_receiver.clear()
         decode_req.kv_receiver = None
+        _pd_kv_ready_first = decode_req.req.time_stats.wait_queue_entry_time == 0.0
         decode_req.req.time_stats.set_wait_queue_entry_time()
+        if _pd_kv_ready_first:
+            from sglang.srt.observability.pd_stage import log_pd_stage
+
+            log_pd_stage(
+                decode_req.req,
+                "decode",
+                "kv_ready",
+                None,
+                decode_req.req.time_stats.wait_queue_entry_time,
+            )
         return
 
     def _pollers(self) -> list:

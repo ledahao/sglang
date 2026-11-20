@@ -1274,6 +1274,13 @@ class Scheduler(
                 f"{'available_cpu_mem' if self.device == 'cpu' else 'available_gpu_mem'}="
                 f"{self.startup_available_gpu_memory_gb:.2f} GB"
             )
+            _pd_peer = get_disagg().disaggregation_mode
+            logger.info(
+                "PDSTAGE rid=- room=- peer=%s stage=import ms=- t_ms=- "
+                "input_len=0 cached=0 path=%s",
+                _pd_peer,
+                __file__,
+            )
 
     def emit_metrics_constants(self) -> None:
         if not get_observability().enable_metrics:
@@ -4329,7 +4336,23 @@ class Scheduler(
         if self.chunked_req is not None:
             self.chunked_req.inflight_middle_chunks += 1
 
+        _pd_queue_first = [
+            req
+            for req in can_run_list
+            if req.time_stats.forward_entry_time == 0.0
+            and self.disaggregation_mode == DisaggregationMode.PREFILL
+        ]
         set_time_batch(can_run_list, "set_forward_entry_time")
+        if _pd_queue_first:
+            from sglang.srt.observability.pd_stage import log_pd_stage
+
+            for req in _pd_queue_first:
+                _start = req.time_stats.wait_queue_entry_time
+                _ts = req.time_stats.forward_entry_time
+                if _start > 0.0 and _ts > 0.0:
+                    log_pd_stage(
+                        req, "prefill", "p_queue", (_ts - _start) * 1000.0, _ts
+                    )
 
         # Create a new batch
         new_batch = ScheduleBatch.init_new(
