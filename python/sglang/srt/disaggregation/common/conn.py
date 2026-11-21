@@ -852,6 +852,20 @@ class CommonKVManager(BaseKVManager):
         handler.handle_chunk_arrived(room, chunk_idx, page_start, num_pages, writer_id)
         return True
 
+    def notify_transfer_deadline(self, bootstrap_room: int) -> None:
+        """Tell decode that the last KV chunk is queued.
+
+        Does not change the room status. Early allocation uses this as the
+        start of the transfer wait, instead of metadata-publish time.
+        """
+        if bootstrap_room not in self.request_status:
+            return
+        self.send_kv_status_message(
+            targets=self._room_notify_targets(bootstrap_room),
+            bootstrap_room=bootstrap_room,
+            status=KVPoll.Transferring,
+        )
+
     def conclude_transfer(
         self,
         *,
@@ -968,6 +982,27 @@ class CommonKVManager(BaseKVManager):
                 bootstrap_room, failure_reason or self.DEFAULT_PREFILL_FAILURE_REASON
             )
             self.update_status(bootstrap_room, KVPoll.Failed)
+            return
+        if status == KVPoll.Transferring:
+            # Last-chunk notice. Do not change the room status.
+            # A repeat, or a notice that is not WaitingForInput, must not
+            # move or rearm the transfer clock.
+            from sglang.srt.disaggregation.common.kv_wait_clock import (
+                accept_transfer_notice,
+            )
+
+            starts = getattr(self, "transfer_deadline_start", None)
+            if starts is None:
+                starts = {}
+                self.transfer_deadline_start = starts
+            if accept_transfer_notice(
+                room_status=self.request_status.get(bootstrap_room),
+                already_stamped=bootstrap_room in starts,
+            ):
+                starts[bootstrap_room] = time.time()
+                logger.info(
+                    "KV transfer deadline armed room=%s", bootstrap_room
+                )
             return
         logger.warning(
             "Ignoring non-terminal status %s for room %s from prefill rank %s",
@@ -2316,6 +2351,14 @@ class CommonKVSender(BaseKVSender):
         if should_skip:
             return
 
+        if (
+            is_last_chunk
+            and not getattr(self, "_transfer_deadline_notified", False)
+            and get_disagg().disaggregation_decode_allocation_policy == "early"
+        ):
+            self._transfer_deadline_notified = True
+            self.kv_mgr.notify_transfer_deadline(self.bootstrap_room)
+
         state_indices = self.kv_mgr.prepare_send_state_indices(state_indices)
         if self._transfer_start_time is None and (
             len(kv_indices) > 0 or state_indices is not None
@@ -2494,6 +2537,8 @@ class CommonKVReceiver(BaseKVReceiver):
         self.require_staging: bool = False
         self.init_time: Optional[float] = None
         self._prefill_wait_start: Optional[float] = None
+        self._prefill_hold_start: Optional[float] = None
+        self._metadata_published = False
         self.abort_notified: bool = False
         self._abort_generation: Optional[int] = None
         self._connection_pool_entries: Dict[str, List[Dict]] = {}
@@ -2601,11 +2646,35 @@ class CommonKVReceiver(BaseKVReceiver):
                 )
                 return KVPoll.Failed
         elif status == KVPoll.WaitingForInput:
-            # Observe readiness before evaluating the old compute deadline.
-            # send_metadata starts the transfer timeout using this same clock.
+            # Non-early send_metadata starts this clock. Early allocation
+            # starts it from the prefill last-chunk notice instead.
             if self._prefill_wait_start is not None:
                 self._prefill_wait_start = None
                 self.init_time = time.time()
+            if self.init_time is None:
+                started = getattr(
+                    self.kv_mgr, "transfer_deadline_start", {}
+                ).get(self.bootstrap_room)
+                if started is not None:
+                    self.init_time = started
+            if self.init_time is None:
+                from sglang.srt.disaggregation.common.kv_wait_clock import (
+                    PREFILL_HOLD_BUDGET_S,
+                    waiting_deadline,
+                )
+
+                # Prefill compute sits in this gap. It uses its own budget,
+                # not kv_mgr.waiting_timeout.
+                outcome = waiting_deadline(
+                    init_time=None,
+                    hold_start=self._prefill_hold_start,
+                    now=time.time(),
+                    transfer_timeout=self.kv_mgr.waiting_timeout,
+                    hold_budget=PREFILL_HOLD_BUDGET_S,
+                )
+                if outcome == "hold":
+                    self._fail_prefill_hold()
+                    return KVPoll.Failed
             timeout = self._check_waiting_timeout()
             if timeout is not None:
                 return timeout
@@ -2883,7 +2952,25 @@ class CommonKVReceiver(BaseKVReceiver):
                 self.invalidate_cached_bootstrap_infos()
                 return
 
-        self.init_time = time.time()
+        # Early allocation publishes this metadata before prefill compute.
+        # Starting the wait here counts that compute as transfer time.
+        if get_disagg().disaggregation_decode_allocation_policy != "early":
+            self.init_time = time.time()
+        else:
+            self._prefill_hold_start = time.time()
+        self._metadata_published = True
+
+    def _fail_prefill_hold(self) -> None:
+        elapsed = time.time() - (self._prefill_hold_start or time.time())
+        self.kv_mgr.record_failure(
+            self.bootstrap_room,
+            (
+                f"Request {self.bootstrap_room} prefill hold expired "
+                f"before last-chunk notice after {elapsed:.1f}s"
+            ),
+        )
+        self.kv_mgr.update_status(self.bootstrap_room, KVPoll.Failed)
+        self.conclude_state = KVPoll.Failed
 
     def _check_waiting_timeout(self) -> Optional[KVPoll]:
         if self.init_time is None:
@@ -2933,6 +3020,9 @@ class CommonKVReceiver(BaseKVReceiver):
                 status if status in (KVPoll.Success, KVPoll.Failed) else KVPoll.Failed
             )
         self.kv_mgr.request_status.pop(self.bootstrap_room, None)
+        started = getattr(self.kv_mgr, "transfer_deadline_start", None)
+        if started is not None:
+            started.pop(self.bootstrap_room, None)
         self.kv_mgr.required_prefill_response_num_table.pop(self.bootstrap_room, None)
         self.kv_mgr.prefill_response_tracker.pop(self.bootstrap_room, None)
         self.kv_mgr.addr_to_rooms_tracker[self.bootstrap_addr].discard(
@@ -2983,8 +3073,15 @@ class CommonKVReceiver(BaseKVReceiver):
         # unarmed -- except on a partial publish, where init_time is still None
         # but earlier ranks already hold destinations; those callers defer and
         # pass force_arm.
-        if self.kv_mgr.enable_deferred_decode_kv_release and (
-            force_arm or self.init_time is not None
+        from sglang.srt.disaggregation.common.kv_wait_clock import (
+            should_arm_deferred_release,
+        )
+
+        if should_arm_deferred_release(
+            enabled=self.kv_mgr.enable_deferred_decode_kv_release,
+            force_arm=force_arm,
+            transfer_clock_started=self.init_time is not None,
+            metadata_published=getattr(self, "_metadata_published", False),
         ):
             self._abort_generation = self.kv_mgr.register_deferred_abort_room(
                 self.bootstrap_room
