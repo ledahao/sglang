@@ -56,8 +56,8 @@
     "num_stages": 3
   },
   "64": {
-    "BLOCK_SIZE_M": 64,
-    "BLOCK_SIZE_N": 32,
+    "BLOCK_SIZE_M": 32,
+    "BLOCK_SIZE_N": 64,
     "BLOCK_SIZE_K": 32,
     "GROUP_SIZE_M": 32,
     "num_warps": 4,
@@ -72,8 +72,8 @@
     "num_stages": 3
   },
   "256": {
-    "BLOCK_SIZE_M": 64,
-    "BLOCK_SIZE_N": 32,
+    "BLOCK_SIZE_M": 128,
+    "BLOCK_SIZE_N": 64,
     "BLOCK_SIZE_K": 32,
     "GROUP_SIZE_M": 32,
     "num_warps": 4,

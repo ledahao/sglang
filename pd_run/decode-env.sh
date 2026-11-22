@@ -1,0 +1,35 @@
+# Performance environment for the 2026-11-22 decode process.
+# Session variables from the original /tmp/decode-env.txt are omitted.
+export SHELL=/bin/bash
+export MOONCAKE_PROTOCOL=rdma
+export MC_MAX_MR_SIZE=134217728
+export SGLANG_HOST_IP=192.168.100.107
+export CHUNKED_PREFILL=8192
+export MC_RDMA_DATA_DIRECT=0
+export HOME=/home/aaron
+export TRANSFER_BACKEND=mooncake
+export ATTN_DP_SIZE=1
+export VIRTUAL_ENV=/home/aaron/pd/.venv-sglang
+export SPEC_DSPARK_BLOCK=3
+export WITH_NVIDIA_PEERMEM=1
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
+export PYTHONPATH=/home/aaron/pd/sglang/python
+export MOONCAKE_DEVICE=mlx5_0
+export SGLANG_RUST_BUILD_MODE=never
+export MC_GID_INDEX=3
+export MOONCAKE_LOCAL_HOSTNAME=192.168.100.107
+export SGLANG_DSV4_DECODER_TAIL_GRAPH_MAX_ROWS=0
+export SGLANG_RAGGED_VERIFY_MODE=static
+export SGLANG_ENABLE_JIT_DEEPGEMM=1
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:/home/aaron/pd/.venv-sglang/lib/python3.12/site-packages/nvidia/cuda_runtime/lib
+export XDG_RUNTIME_DIR=/run/user/1003
+export PATH=/home/aaron/pd/.venv-sglang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export CUDA_GRAPH_MAX_BS=64
+export ENABLE_SPEC=1
+export MEM_FRACTION=0.82
+export HOST_IP=192.168.100.107
+export SGLANG_ENABLE_PCIE_IPC_ALLREDUCE=1
+export SGLANG_DSV41_SPAN_BUCKETS=0
+export SGLANG_DSV41_SHORT_COLS=1
+export SGLANG_OPT_DSV41_TARGET_VERIFY_METADATA_GLUE=0
+export SGLANG_OPT_DSV41_TARGET_METADATA_EARLY=0
